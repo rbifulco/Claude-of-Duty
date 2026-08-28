@@ -13,16 +13,23 @@ import { AiSystem } from './ai/index.js';
 import { UiSystem } from './ui/index.js';
 import { AudioSystem } from './audio/index.js';
 
-import { installShotApi } from './dev/shots.js';
+import { installShotApi, SHOTS } from './dev/shots.js';
 import { prewarm } from './core/prewarm.js';
+import {
+  attachClaudeOfDutyDiscovery,
+  attachClaudeOfDutyScene,
+  SPATIAL_REVIEW_SEED,
+} from './spatial-review.js';
 
 const params = new URLSearchParams(location.search);
 const capture = params.get('capture') === '1';
+const spatialCapture = params.get('spatial-review-capture') === '1';
 // Deterministic shutter for the pixel gate: the engine does not schedule its own
 // frames, the driver advances exactly N of them through window.__PUMP__. Opt-in,
 // because tools that measure real frame pacing (tools/perf.mjs) need the loop to
 // free-run. See the long comment in src/dev/shots.js.
 const lockstep = capture && params.get('lockstep') === '1';
+const detachSpatialReviewDiscovery = attachClaudeOfDutyDiscovery();
 
 const config = createConfig({
   quality: params.get('q') ?? 'ultra',
@@ -32,6 +39,9 @@ const config = createConfig({
 const canvas = document.getElementById('game');
 
 const engine = new Engine({ canvas, config });
+// Seed the existing stream before any subsystem forks it. Unlike screenshot
+// mode, this keeps the normal six-enemy garrison in the review inventory.
+if (spatialCapture) engine.rng.seed(SPATIAL_REVIEW_SEED);
 
 // Registration order is irrelevant — Registry topo-sorts on static deps.
 engine
@@ -60,7 +70,7 @@ BOOT FAILURE\n\n${err.stack ?? err.message}</pre>`
   throw err;
 }
 
-const shotApi = installShotApi(engine, { capture, lockstep });
+const shotApi = installShotApi(engine, { capture, lockstep: lockstep || spatialCapture });
 
 // Compile every shader permutation before the frame loop starts. Measured: without
 // this, 86 programs compile lazily during play, up to 30 on one frame, producing
@@ -76,11 +86,19 @@ const shotApi = installShotApi(engine, { capture, lockstep });
 // lockstep in src/dev/shots.js; (2) `will-change: transform` on the compass strip
 // cached a composited-layer raster taken at a wall-clock-dependent moment — fixed
 // in src/ui/style.js.
-const warmup = params.get('prewarm') === '0' ? { ok: false, reason: 'disabled by ?prewarm=0' } : await prewarm(engine);
+const warmup = spatialCapture || params.get('prewarm') === '0'
+  ? { ok: false, reason: spatialCapture ? 'static spatial review capture' : 'disabled by ?prewarm=0' }
+  : await prewarm(engine);
 console.info('[boot] prewarm', warmup);
 window.__PREWARM__ = warmup;
 
-engine.start();
+// Register after boot and pre-warm so a review catalog request cannot race the
+// level builder or shader compiler. Serialization remains lazy until an editor
+// explicitly asks for the scene.
+const spatialReview = attachClaudeOfDutyScene(engine);
+window.__SPATIAL_REVIEW__ = spatialReview;
+
+if (!spatialCapture) engine.start();
 
 // Capture harness handshake: only flag ready once a frame has actually landed.
 //
@@ -89,7 +107,22 @@ engine.start();
 // then raise __READY__; the shot is therefore always applied at engine frame 3, no
 // matter how long boot (or pre-warm) took in wall-clock terms.
 const BOOT_FRAMES = 3;
-if (lockstep) {
+if (spatialCapture) {
+  // Keep the resource bridge alive without running combat behind the editor.
+  // No simulation step occurs: catalog requests see the same authored boot pose.
+  engine.input.frozen = true;
+  engine.input.enabled = false;
+  // The player has not run an update, so explicitly pose the camera instead of
+  // rendering from the engine's initial origin. This does not move any actors.
+  engine.camera.position.fromArray(SHOTS.hero.pos);
+  engine.camera.lookAt(...SHOTS.hero.look);
+  engine.camera.fov = SHOTS.hero.fov;
+  engine.camera.updateProjectionMatrix();
+  // The unregistered first-person rig also has not been posed by its update.
+  engine.ctx.get('weapons').viewmodel.anchor.visible = false;
+  engine.ctx.get('render').render(engine.ctx);
+  window.__READY__ = true;
+} else if (lockstep) {
   await shotApi.pump(BOOT_FRAMES);
   window.__READY__ = true;
 } else {
@@ -107,5 +140,10 @@ if (lockstep) {
 window.__ENGINE__ = engine;
 
 if (import.meta.hot) {
-  import.meta.hot.dispose(() => engine.dispose());
+  import.meta.hot.dispose(() => {
+    spatialReview.dispose();
+    detachSpatialReviewDiscovery();
+    delete window.__SPATIAL_REVIEW__;
+    engine.dispose();
+  });
 }

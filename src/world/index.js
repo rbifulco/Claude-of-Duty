@@ -103,7 +103,9 @@ export class WorldSystem {
     materials.setGroundLevel?.(0);
 
     const t0 = performance.now();
-    const A = new Assembler({ materials, rng, render });
+    const reviewEnabled = new URLSearchParams(window.location.search)
+      .get('spatial-review-capture') === '1';
+    const A = new Assembler({ materials, rng, render, reviewEnabled });
     this.A = A;
     A.setTransform(LEVEL_YAW, LEVEL_TX, LEVEL_TZ);
 
@@ -112,10 +114,25 @@ export class WorldSystem {
     registerDressingProps(A, rng);
 
     // 2. ground, then the shells, then what people put in and on them
+    A.setReviewScope({
+      id: 'ground',
+      name: 'Ground and streets',
+      category: 'Environment / Ground',
+      sourceRef: 'src/world/ground.js#buildGround',
+      tags: ['level', 'procedural', 'ground', 'streets'],
+      reviewProps: false,
+    });
     buildGround(A, rng);
 
     const infos = [];
     for (const spec of BUILDINGS) {
+      A.setReviewScope({
+        id: `building-${spec.id.toLowerCase()}`,
+        name: `Building ${spec.id}`,
+        category: 'Environment / Buildings',
+        sourceRef: `src/world/layout.js#BUILDINGS.${spec.id}`,
+        tags: ['level', 'procedural', 'building', spec.id.toLowerCase()],
+      });
       const info = buildBuilding(A, rng, spec);
       infos.push(info);
       if (spec.collapse) {
@@ -127,11 +144,41 @@ export class WorldSystem {
     }
     this.buildings = infos;
 
+    A.setReviewScope({
+      id: 'gate',
+      name: 'Market gate',
+      category: 'Environment / Architecture',
+      sourceRef: 'src/world/dressing.js#buildGate',
+      tags: ['level', 'procedural', 'gate'],
+    });
     buildGate(A, rng);
+    A.setReviewScope({
+      id: 'perimeter',
+      name: 'Perimeter structures',
+      category: 'Environment / Architecture',
+      sourceRef: 'src/world/dressing.js#buildPerimeter',
+      tags: ['level', 'procedural', 'perimeter'],
+    });
     buildPerimeter(A, rng);
+    A.setReviewScope({
+      id: 'street-fixtures',
+      name: 'Street fixtures',
+      category: 'Environment / Fixtures',
+      sourceRef: 'src/world/dressing.js#dressStreet',
+      tags: ['level', 'procedural', 'street', 'fixtures'],
+    });
     dressStreet(A, rng);
     dressBuildings(A, rng, infos);
+    A.setReviewScope({
+      id: 'street-debris',
+      name: 'Street debris',
+      category: 'Environment / Dressing',
+      sourceRef: 'src/world/dressing.js#scatterDebris',
+      tags: ['level', 'procedural', 'street', 'debris'],
+      reviewProps: false,
+    });
     scatterDebris(A, rng);
+    A.setReviewScope(null);
 
     this._addLights(A);
 

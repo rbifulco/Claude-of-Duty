@@ -39,13 +39,20 @@ const _UP = new THREE.Vector3(0, 1, 0);
 const CHUNK = 64;
 
 export class Assembler {
-  constructor({ materials, rng, render }) {
+  constructor({ materials, rng, render, reviewEnabled = false }) {
     this.materials = materials;
     this.rng = rng;
     this.render = render;
+    this.reviewEnabled = reviewEnabled;
     this._mats = new Map(); // palette key -> THREE.Material
     this._static = new Map(); // palette key -> Accum
     this._protos = new Map(); // id -> { geo, key, instances[], masks[], opts }
+    // Review-only authored boundaries. These duplicate CPU-side merge data, not
+    // render objects: the game still emits the same palette batches below.
+    this._reviewScopes = new Map(); // id -> { metadata, staticByKey, counts }
+    this._reviewScope = null;
+    this.reviewStatics = [];
+    this.reviewProps = [];
     this._collide = new Map(); // surface -> Accum
     this._geoCache = new Map(); // kit piece key -> BufferGeometry
     this.lights = [];
@@ -127,15 +134,64 @@ export class Assembler {
     return PALETTE[key]?.surface ?? 'concrete';
   }
 
+  // ------------------------------------------------------- review metadata --
+  /**
+   * Select the authored object/zone receiving subsequent geometry and prop
+   * placements. Re-selecting an id appends to the same semantic object, which
+   * lets a building shell and its later dressing remain one review actor.
+   */
+  setReviewScope(scope = null) {
+    if (!this.reviewEnabled) return this;
+    if (!scope) {
+      this._reviewScope = null;
+      return this;
+    }
+    let record = this._reviewScopes.get(scope.id);
+    if (!record) {
+      record = {
+        ...scope,
+        tags: [...(scope.tags ?? [])],
+        staticByKey: new Map(),
+        placementCounts: new Map(),
+      };
+      this._reviewScopes.set(scope.id, record);
+    }
+    this._reviewScope = record;
+    return this;
+  }
+
+  _activeReviewScope() {
+    if (this._reviewScope) return this._reviewScope;
+    this.setReviewScope({
+      id: 'world',
+      name: 'World dressing',
+      category: 'Environment / Dressing',
+      sourceRef: 'src/world/index.js#WorldSystem.init',
+      tags: ['level', 'procedural', 'dressing'],
+    });
+    return this._reviewScope;
+  }
+
   // --------------------------------------------------------- static batch --
   /** Merge a transformed geometry into the batch for `key`. */
   add(key, geo, matrix = null, opts = null) {
+    const worldMatrix = this._x(matrix);
     let a = this._static.get(key);
     if (!a) {
       a = new Accum(`world:${key}`);
       this._static.set(key, a);
     }
-    a.add(geo, this._x(matrix), opts);
+    a.add(geo, worldMatrix, opts);
+
+    if (this.reviewEnabled) {
+      const scope = this._activeReviewScope();
+      let review = scope.staticByKey.get(key);
+      if (!review) {
+        review = new Accum(`review:${scope.id}:${key}`);
+        scope.staticByKey.set(key, review);
+      }
+      review.add(geo, worldMatrix, opts);
+    }
     return this;
   }
 
@@ -189,6 +245,7 @@ export class Assembler {
       tilt: spec.tilt ?? 0,
       sink: spec.sink ?? 0,
       key: spec.key,
+      sourceRef: spec.sourceRef ?? `src/world/props.js#${id}`,
       /**
        * Radius, in metres, of the swept dust fillet `put()` should drop under
        * every instance of this prototype. Nothing in the frame currently
@@ -205,6 +262,8 @@ export class Assembler {
       maxDist: spec.maxDist ?? 0,
       matrices: [],
       masks: [],
+      review: spec.review !== false,
+      reviewPlacements: [],
       noPrepass: !!spec.noPrepass,
     });
     return id;
@@ -221,8 +280,16 @@ export class Assembler {
       console.warn(`[world] no prop prototype "${id}"`);
       return this;
     }
-    p.matrices.push(this._x(matrix).clone());
+    const placed = this._x(matrix).clone();
+    p.matrices.push(placed);
     p.masks.push(masks ? [masks[0], masks[1], masks[2]] : null);
+    if (this.reviewEnabled && p.review) {
+      const scope = this._activeReviewScope();
+      if (scope.reviewProps === false) return this;
+      const count = (scope.placementCounts.get(id) ?? 0) + 1;
+      scope.placementCounts.set(id, count);
+      p.reviewPlacements.push({ matrix: placed, scope, ordinal: count });
+    }
     return this;
   }
 
@@ -334,6 +401,33 @@ export class Assembler {
       this.stats.drawCalls++;
     }
 
+    // Semantic review meshes are deliberately not parented into the render
+    // scene. Their vertices are the same world-space data, regrouped by authored
+    // object rather than by the renderer's material/draw-call boundary.
+    for (const scope of this._reviewScopes.values()) {
+      const roots = [];
+      for (const [key, acc] of scope.staticByKey) {
+        if (acc.empty) continue;
+        const mesh = new THREE.Mesh(acc.build(), this.mat(key));
+        mesh.name = `review_${scope.id}_${key}`;
+        mesh.matrixAutoUpdate = false;
+        mesh.userData.surface = this.surfaceOf(key);
+        mesh.userData.reviewOnly = true;
+        mesh.updateMatrix();
+        roots.push(mesh);
+      }
+      if (roots.length > 0) {
+        this.reviewStatics.push({
+          id: scope.id,
+          name: scope.name,
+          category: scope.category,
+          sourceRef: scope.sourceRef,
+          tags: scope.tags,
+          roots,
+        });
+      }
+    }
+
     // --- instanced props ---
     for (const p of this._protos.values()) {
       const n = p.matrices.length;
@@ -357,6 +451,16 @@ export class Assembler {
       }
 
       const mat = this.mat(p.key);
+      if (p.reviewPlacements.length > 0) {
+        this.reviewProps.push({
+          id: p.id,
+          key: p.key,
+          sourceRef: p.sourceRef,
+          geometry: p.geo,
+          material: mat,
+          placements: p.reviewPlacements,
+        });
+      }
       for (const list of buckets.values()) {
         const im = new THREE.InstancedMesh(p.geo, mat, list.length);
         im.name = `prop_${p.id}`;
@@ -445,11 +549,18 @@ export class Assembler {
       m.parent?.remove(m);
     }
     for (const c of this.collisionRoot?.children ?? []) c.geometry?.dispose();
+    for (const semantic of this.reviewStatics) {
+      for (const root of semantic.roots) root.geometry?.dispose();
+    }
     this.meshes.length = 0;
     this.lodGroups.length = 0;
+    this.reviewStatics.length = 0;
+    this.reviewProps.length = 0;
     for (const p of this._protos.values()) p.geo?.dispose();
     this._protos.clear();
     this._static.clear();
+    this._reviewScopes.clear();
+    this._reviewScope = null;
     this._collide.clear();
   }
 }

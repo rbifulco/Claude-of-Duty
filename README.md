@@ -7,7 +7,7 @@ A first-person shooter built in the browser with Three.js r180 and WebGL2. Rough
 
 **There are no art assets.** Every texture, mesh, animation and sound is generated
 procedurally at load time from code. No models, no HDRIs, no image files, no audio
-files. The only runtime dependency is `three`.
+files. Rendering uses `three`; Spatial Review adds a review SDK and protocol.
 
 ```bash
 npm install
@@ -16,6 +16,54 @@ npm run dev          # http://127.0.0.1:5173
 
 Click the canvas to lock the cursor. WASD move, mouse aim, LMB fire, RMB ADS,
 R reload, Shift sprint, Ctrl crouch, Space jump, Q/E lean, Esc release.
+
+## Spatial review
+
+The live Three.js world uses the published Spatial Review SDK **0.4.0**, pinned
+with its protocol in `package.json` and `package-lock.json`. Both share the
+game's Three.js 0.180.0 runtime; no sibling checkout is needed. The bridge
+explicitly authorizes the official editor at `https://spatial-review.alterno.dev`
+and loopback editors during local development. Open the game URL in that editor
+to inspect the procedural market scene and the **Environment review tour**.
+
+Scene composition follows authored boundaries without changing the optimized
+render graph: buildings, ground, perimeter structures, fixtures/services, and
+other meaningful static zones are separate review actors even though the game
+still merges them into material batches. Every reviewable set-dressing placement
+is an individual actor, while repeated placements share one canonical prop
+asset. Stochastic street/ground micro-scatter, bullet pocks, and generated
+contact fillets stay below the review scale. Each live enemy remains a separate
+review actor.
+
+The tour is derived from the authoritative environment camera definitions in
+`src/dev/shots.js`: camera positions, look targets, FOVs, stable IDs, and source
+references stay mapped to those definitions. Its straight, equally weighted
+transitions are editor-only review interpolation; the game itself teleports
+between named capture shots and does not play those transitions.
+
+Install and verify with:
+
+```bash
+npm ci
+npm run test:spatial-review
+npm run build
+```
+
+The advertised `?spatial-review-capture=1&prewarm=0` page uses seed `0x5eed1234`
+and the six enemies' initial poses, draws once, and does not run gameplay behind
+the editor. Normal play remains randomized and animated. Compatible editors
+automatically negotiate 0.4.0's progressive asset and transferable-geometry
+capabilities; older editors retain the full-catalog fallback.
+
+Build identity is `semantic-v5` plus `VITE_GIT_COMMIT` (or a clearly labeled
+`development` fallback). Re-import the old v4 scene as a new review baseline:
+the seeded capture and canonical prop component names intentionally replace
+the former randomized snapshot. See [integration notes](docs/spatial-review.md)
+for source mapping, exclusions, and verification limitations.
+
+Production hosting must allow the exact official editor origin in its
+`Content-Security-Policy: frame-ancestors` response header and must not send an
+`X-Frame-Options` value that blocks that origin.
 
 ## What's in it
 

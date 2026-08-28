@@ -151,7 +151,12 @@ function nearestWall(x, z) {
 // =============================================================== prototypes ==
 /** Props that only the dressing pass uses. */
 export function registerDressingProps(A, rng) {
-  const P = (id, key, geo, opts = {}) => A.proto(id, { geo, key, ...opts });
+  const P = (id, key, geo, opts = {}) => A.proto(id, {
+    geo,
+    key,
+    sourceRef: `src/world/dressing.js#registerDressingProps.${id}`,
+    ...opts,
+  });
 
   P('wreck', 'metal_dark', burntCar(rng), { chunk: false });
 
@@ -1409,7 +1414,24 @@ function coverClusters(A, rng) {
  */
 export function dressBuildings(A, rng, infos) {
   A.jitter = jitterRig();
-  for (const info of infos) dressBuilding(A, rng, info);
+  for (const info of infos) {
+    const id = info.spec.id;
+    A.setReviewScope({
+      id: `building-${id.toLowerCase()}`,
+      name: `Building ${id}`,
+      category: 'Environment / Buildings',
+      sourceRef: `src/world/layout.js#BUILDINGS.${id}`,
+      tags: ['level', 'procedural', 'building', id.toLowerCase()],
+    });
+    dressBuilding(A, rng, info);
+  }
+  A.setReviewScope({
+    id: 'overhead-services',
+    name: 'Overhead services',
+    category: 'Environment / Fixtures',
+    sourceRef: 'src/world/dressing.js#alleyLines',
+    tags: ['level', 'procedural', 'cables', 'laundry'],
+  });
   alleyLines(A, rng, infos);
   A.jitter = null;
 }
