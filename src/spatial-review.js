@@ -8,7 +8,7 @@ import { SHOTS } from './dev/shots.js';
 
 // Change when the review catalog's stable actor/asset addressing changes. The
 // editor uses this to avoid replacing a saved scene with an identical handoff.
-const BUILD_ID = `claude-of-duty-semantic-v5-${import.meta.env?.VITE_GIT_COMMIT || 'development'}`;
+const BUILD_ID = `claude-of-duty-assemblies-v6-${import.meta.env?.VITE_GIT_COMMIT || 'development'}`;
 export const SPATIAL_REVIEW_SEED = 0x5eed1234;
 const BRIDGE_OPTIONS = { allowOfficialEditor: true };
 const PROP_CATEGORY_RULES = [
@@ -50,11 +50,11 @@ function registerWorldComposition(registry, world, mirrors) {
       mirrors.push(...object.roots);
       registry.register({
         actorId: object.id,
-        assetId: `environment-${object.id}`,
+        assetId: object.assetId,
         name: object.name,
         category: object.category,
         sourceRef: object.sourceRef,
-        tags: [...object.tags, 'semantic-static'],
+        tags: [...object.tags, object.attachedParts ? 'assembly' : 'semantic-static'],
         order: 100 + index,
         roots: object.roots,
       });
@@ -63,6 +63,7 @@ function registerWorldComposition(registry, world, mirrors) {
   propAssets.forEach((prop, assetIndex) => {
     const propSlug = prop.id.replaceAll('_', '-');
     prop.placements.forEach((placement) => {
+      if (placement.ownerId) return; // already owned by exactly one assembly
       const root = new THREE.Mesh(prop.geometry, prop.material);
       // Component identity belongs to the design, not whichever placement is
       // first in the catalog. The actor name below still identifies placement.
@@ -95,8 +96,9 @@ function registerWorldComposition(registry, world, mirrors) {
 
   return {
     staticObjects: staticObjects.length,
-    propAssets: propAssets.length,
+    propAssets: propAssets.filter(prop => prop.placements.some(p => !p.ownerId)).length,
     propPlacements,
+    attachedParts: staticObjects.reduce((sum, object) => sum + object.attachedParts, 0),
   };
 }
 
@@ -235,8 +237,8 @@ export function attachClaudeOfDutyScene(engine) {
   registry.registerNavigationSequence(buildEnvironmentReviewTour());
 
   console.info(
-    `[spatial-review] ${registry.size} actors · ${composition.staticObjects} semantic static objects · ` +
-      `${composition.propPlacements} prop placements from ${composition.propAssets} shared assets · ` +
+    `[spatial-review] ${registry.size} actors · ${composition.staticObjects} assemblies/context objects · ` +
+      `${composition.attachedParts} attached parts · ${composition.propPlacements} loose prop placements from ${composition.propAssets} shared assets · ` +
       `${enemies} enemies · ${registry.navigationSize} path`
   );
 

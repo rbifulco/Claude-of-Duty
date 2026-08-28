@@ -170,12 +170,12 @@ export function buildBuilding(A, rng, spec) {
   // A base course everywhere: catches the ground grime band and stops the walls
   // reading as slabs dropped on a plane.
   const plinthH = spec.plinthH ?? 0.42;
-  A.add(
+  A.withReviewPart('Foundation', () => A.add(
     spec.plinthKey ?? 'concrete',
     BOX(A),
     LL(IDENT, spec.x, plinthH / 2, spec.z, 0, spec.w + 0.14, plinthH, spec.d + 0.14),
     { masks: [0.55, 0.75, 0.45] }
-  );
+  ));
   A.box('concrete', spec.x, plinthH / 2, spec.z, spec.w + 0.14, plinthH, spec.d + 0.14);
 
   let y = 0;
@@ -186,15 +186,17 @@ export function buildBuilding(A, rng, spec) {
     info.floorY.push(y);
     for (let side = 0; side < 4; side++) {
       if (spec.skipSides?.includes(side)) continue;
-      buildFacade(A, rng, fs, info, { side, f, y, h, t, wallKey, streetSide, floors });
+      A.withReviewPart([`Floor ${f + 1}`, `Facade ${['north', 'east', 'south', 'west'][side]}`], () =>
+        buildFacade(A, rng, fs, info, { side, f, y, h, t, wallKey, streetSide, floors }));
     }
     // ---- floor / ceiling slab of the NEXT level ----
     y += h;
     if (f < floors - 1) {
-      interiorSlab(A, rng, floorSpec(spec, f + 1), y, t, f + 1);
+      A.withReviewPart([`Floor ${f + 2}`, 'Slab and beams'], () =>
+        interiorSlab(A, rng, floorSpec(spec, f + 1), y, t, f + 1));
       // the setback happens on top of this floor: dress the exposed strip
       if (spec.setback && f + 1 === spec.setback.from) {
-        info.terraces.push(terrace(A, rng, spec, y, t));
+        info.terraces.push(A.withReviewPart('Terrace', () => terrace(A, rng, spec, y, t)));
       }
     }
   }
@@ -203,19 +205,20 @@ export function buildBuilding(A, rng, spec) {
 
   // ------------------------------------------------------------------ roof --
   const ts = floorSpec(spec, floors - 1);
-  interiorSlab(A, rng, ts, y, t, floors, true);
+  A.withReviewPart(['Roof', 'Slab'], () => interiorSlab(A, rng, ts, y, t, floors, true));
   if (spec.parapet !== false) {
-    parapet(A, spec.parapetKey ?? wallKey, ts.x, ts.z, ts.w + 0.1, ts.d + 0.1, y, rng, {
+    A.withReviewPart(['Roof', 'Parapet'], () => parapet(A, spec.parapetKey ?? wallKey, ts.x, ts.z, ts.w + 0.1, ts.d + 0.1, y, rng, {
       h: spec.parapetH ?? 0.78,
       t: 0.22,
-    });
+    }));
   }
   info.roofSpec = ts;
 
   // ----------------------------------------------------------- interiors ---
   if (spec.enterable) {
-    buildInterior(A, rng, spec, info, t, groundH, upperH, floors);
+    A.withReviewPart('Interiors', () => buildInterior(A, rng, spec, info, t, groundH, upperH, floors));
   } else {
+    const endCore = A.beginReviewPart('Interior core');
     // Non-enterable: a dark core so windows read as depth, not as a hole into
     // a lit empty shell.
     // Sized off the SMALLEST floor plate so a setback never leaves the core
@@ -247,6 +250,7 @@ export function buildBuilding(A, rng, spec) {
       );
       if (f === 0) A.box('concrete', fs.x, fy - 0.06, fs.z, fs.w, 0.2, fs.d);
     }
+    endCore();
   }
 
   // ------------------------------------------------------------- drainpipe --
@@ -263,9 +267,11 @@ export function buildBuilding(A, rng, spec) {
     sbSide === dpSide
       ? (info.floorY[spec.setback.from] ?? info.roofY) + 0.55
       : info.roofY + 0.4;
-  drainpipe(A, pmD.clone(), rng.range(-len / 2 + 0.4, -len / 2 + 1.0), dpTop, dpTop, rng);
+  A.withReviewPart(['Services', 'Downpipe left'], () =>
+    drainpipe(A, pmD.clone(), rng.range(-len / 2 + 0.4, -len / 2 + 1.0), dpTop, dpTop, rng));
   if (rng.float() < 0.6) {
-    drainpipe(A, pmD.clone(), rng.range(len / 2 - 1.0, len / 2 - 0.4), dpTop, dpTop, rng);
+    A.withReviewPart(['Services', 'Downpipe right'], () =>
+      drainpipe(A, pmD.clone(), rng.range(len / 2 - 1.0, len / 2 - 0.4), dpTop, dpTop, rng));
   }
 
   return info;
@@ -317,11 +323,13 @@ function buildFacade(A, rng, spec, info, ctx) {
     if (typeof forced === 'string') forced = { kind: forced };
     if (forced) kind = forced.kind;
 
+    const decorate = (name, build) => deco.push(() => A.withReviewPart(`Bay ${b + 1} ${name}`, build));
+
     switch (kind) {
       case 'door': {
         const o = { x: bx, y: 1.08, w: 1.12, h: 2.16, kind };
         openings.push(o);
-        deco.push(() =>
+        decorate('door', () =>
           doorUnit(A, pm, o, rng, {
             t,
             open: rng.float() < 0.45 ? rng.range(0.5, 1.6) : 0,
@@ -338,10 +346,10 @@ function buildFacade(A, rng, spec, info, ctx) {
         // Never fully shuttered: a market street with every shop closed is dead,
         // and a shutter over an interior sightline blocks the shot.
         const drop = forced?.drop ?? (rng.float() < 0.5 ? rng.range(0.1, 0.55) : 0);
-        deco.push(() => shopfront(A, pm, o, rng, { t, drop }));
+        decorate('shopfront', () => shopfront(A, pm, o, rng, { t, drop }));
         if (rng.float() < 0.8) {
           const aw = sw + 0.5;
-          deco.push(() =>
+          decorate('awning', () =>
             awning(A, pm, bx, o.y + o.h / 2 + 0.55, aw, rng, {
               depth: rng.range(1.3, 1.9),
               key: rng.pick(['fabric_red', 'fabric_teal', 'fabric_cream']),
@@ -362,7 +370,7 @@ function buildFacade(A, rng, spec, info, ctx) {
         // facade carries open casements, boarded holes, shut louvres, curtains and
         // the occasional lit room instead of one repeated glazed panel.
         const st = broken ? 'open' : windowState(rng, f, spec.damage ?? 0.15, { allowLit: !openFace || f > 0 });
-        deco.push(() =>
+        decorate('window', () =>
           windowUnit(A, pm, o, rng, {
             t,
             broken,
@@ -382,7 +390,7 @@ function buildFacade(A, rng, spec, info, ctx) {
         const o = { x: bx, y: 1.05 + 0.9, w: ww, h: 1.9, arch: 0.62, kind };
         openings.push(o);
         const st = windowState(rng, f, spec.damage ?? 0.15);
-        deco.push(() =>
+        decorate('arched window', () =>
           windowUnit(A, pm, o, rng, {
             t,
             broken: rng.float() < 0.2,
@@ -401,7 +409,7 @@ function buildFacade(A, rng, spec, info, ctx) {
         const o = { x: bx, y: 1.12, w: ww, h: 2.24, kind };
         openings.push(o);
         const bwid = Math.min(bw - 0.35, 2.6);
-        deco.push(() => {
+        decorate('balcony', () => {
           doorUnit(A, pm, o, rng, {
             t,
             open: rng.float() < 0.5 ? rng.range(0.6, 1.5) : 0,
@@ -433,7 +441,7 @@ function buildFacade(A, rng, spec, info, ctx) {
 
   // ---- the wall itself ----
   const isTop = f === floors - 1;
-  facadeWall(A, pm, {
+  A.withReviewPart('Wall', () => facadeWall(A, pm, {
     w: len,
     h: h + (isTop ? 0.02 : 0),
     t,
@@ -451,9 +459,10 @@ function buildFacade(A, rng, spec, info, ctx) {
       out[1] = Math.min(1, out[1] + base * base * 0.55 * (0.5 + n));
       out[2] = Math.min(1, out[2] + base * base * 0.4);
     },
-  });
+  }));
 
   for (const fn of deco) fn();
+  const endSurface = A.beginReviewPart('Trim and weathering');
 
   // ---- rain runoff below every opening and ledge --------------------------
   // The world knows where the water comes off: sills, shopfront heads, awning
@@ -578,6 +587,7 @@ function buildFacade(A, rng, spec, info, ctx) {
       }
     }
   }
+  endSurface();
 }
 
 // ================================================================= slabs ====
@@ -645,6 +655,7 @@ function buildInterior(A, rng, spec, info, t, groundH, upperH, floors) {
   const rooms = spec.rooms ?? [];
   for (let f = 0; f < floors; f++) {
     // Room plans are normalised, so they follow a setback automatically.
+    const endFloor = A.beginReviewPart(`Floor ${f + 1}`);
     const fs = floorSpec(spec, f);
     const iw = fs.w - t * 2;
     const id = fs.d - t * 2;
@@ -655,7 +666,8 @@ function buildInterior(A, rng, spec, info, t, groundH, upperH, floors) {
     // partitions for this floor
     const plan = rooms[f] ?? rooms[rooms.length - 1] ?? null;
     if (plan) {
-      for (const wall of plan.walls) {
+      for (const [wallIndex, wall] of plan.walls.entries()) {
+        const endPartition = A.beginReviewPart(`Partition ${wallIndex + 1}`);
         const [ax, az, bx, bz, doorAt] = wall;
         const wx0 = x0 + ax * iw;
         const wz0 = z0 + az * id;
@@ -690,12 +702,14 @@ function buildInterior(A, rng, spec, info, t, groundH, upperH, floors) {
         for (const hole of holes) {
           doorUnit(A, pm, hole, rng, { t: it, leaf: rng.float() < 0.4, open: 1.4, leafKey: 'wood_dark' });
         }
+        endPartition();
       }
     }
 
     // ---- stairs rising out of this floor ----
     for (const fl of spec.stairFlights ?? []) {
       if (fl.floor !== f) continue;
+      const endStairs = A.beginReviewPart('Stair flight and landing');
       const base = info.floorY[f] + (f === 0 ? 0.13 : 0);
       const climb = (info.floorY[f + 1] ?? info.roofY) - base;
       const steps = Math.max(6, Math.round(climb / 0.19));
@@ -718,12 +732,13 @@ function buildInterior(A, rng, spec, info, t, groundH, upperH, floors) {
       });
       const wp = worldOf(pm, 0, H - 0.1, D + 0.55);
       A.box('concrete', wp[0], wp[1], wp[2], sw + 0.1, 0.2, 1.1, fl.ry ?? 0);
+      endStairs();
     }
 
     // furnishing
     if (plan?.furnish) {
       for (const r of plan.furnish) {
-        furnishRoom(A, rng, {
+        A.withReviewPart('Furnishing', () => furnishRoom(A, rng, {
           kind: r.kind,
           // so furnishing never stacks a shelf across a shopfront opening
           street: spec.streetSide,
@@ -734,13 +749,15 @@ function buildInterior(A, rng, spec, info, t, groundH, upperH, floors) {
           y: fy,
           h: fh,
           spec,
-        });
+        }));
       }
     }
+    endFloor();
   }
 
   // roof access: a stair penthouse box with an open doorway
   if (spec.roofAccess) {
+    const endAccess = A.beginReviewPart('Roof access');
     const rs = floorSpec(spec, floors - 1);
     const riw = rs.w - t * 2;
     const rid = rs.d - t * 2;
@@ -765,6 +782,7 @@ function buildInterior(A, rng, spec, info, t, groundH, upperH, floors) {
       masks: [0.5, 0.45, 0.2],
     });
     A.box('concrete', px, y + 2.6, pz, 2.7, 0.2, 2.9);
+    endAccess();
   }
 }
 

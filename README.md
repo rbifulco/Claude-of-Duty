@@ -26,14 +26,15 @@ explicitly authorizes the official editor at `https://spatial-review.alterno.dev
 and loopback editors during local development. Open the game URL in that editor
 to inspect the procedural market scene and the **Environment review tour**.
 
-Scene composition follows authored boundaries without changing the optimized
-render graph: buildings, ground, perimeter structures, fixtures/services, and
-other meaningful static zones are separate review actors even though the game
-still merges them into material batches. Every reviewable set-dressing placement
-is an individual actor, while repeated placements share one canonical prop
-asset. Stochastic street/ground micro-scatter, bullet pocks, and generated
-contact fillets stay below the review scale. Each live enemy remains a separate
-review actor.
+Scene composition follows authored ownership without changing the optimized
+render graph. Buildings include their attached services and signage; each palm,
+street lamp, and freestanding sandbag wall is one assembly. The gate owns its
+rampart bags and aerial. Move these together in Scene; inspect named components
+in Asset. Attached components are not also registered as separate actors.
+Loose crates, furniture, and other props remain individual actors sharing their
+canonical prop assets. Ground and broad environment zones remain context actors.
+Stochastic street/ground micro-scatter, bullet pocks, and generated contact
+fillets stay below the review scale. Each live enemy remains separate.
 
 The tour is derived from the authoritative environment camera definitions in
 `src/dev/shots.js`: camera positions, look targets, FOVs, stable IDs, and source
@@ -55,11 +56,12 @@ the editor. Normal play remains randomized and animated. Compatible editors
 automatically negotiate 0.4.0's progressive asset and transferable-geometry
 capabilities; older editors retain the full-catalog fallback.
 
-Build identity is `semantic-v5` plus `VITE_GIT_COMMIT` (or a clearly labeled
-`development` fallback). Re-import the old v4 scene as a new review baseline:
-the seeded capture and canonical prop component names intentionally replace
-the former randomized snapshot. See [integration notes](docs/spatial-review.md)
-for source mapping, exclusions, and verification limitations.
+Build identity is `assemblies-v6` plus `VITE_GIT_COMMIT` (or a clearly labeled
+`development` fallback). Start a new review baseline when migrating from v5:
+attached actor IDs now resolve to assembly components, and building bounds,
+frames and component IDs have changed. Retain old feedback separately and map
+it intentionally; do not blindly replay it. See [integration notes](docs/spatial-review.md)
+for ownership, source mapping, exclusions, and verification limitations.
 
 Production hosting must allow the exact official editor origin in its
 `Content-Security-Policy: frame-ancestors` response header and must not send an

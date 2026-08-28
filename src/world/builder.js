@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Accum, trs } from './util.js';
 import { PALETTE } from './palette.js';
+import { ReviewCapture } from './review.js';
 
 /**
  * WORLD — the assembler.
@@ -37,6 +38,7 @@ const _UP = new THREE.Vector3(0, 1, 0);
  * cascades, which is the wrong trade at this map size.
  */
 const CHUNK = 64;
+const NOOP = () => {};
 
 export class Assembler {
   constructor({ materials, rng, render, reviewEnabled = false }) {
@@ -47,10 +49,7 @@ export class Assembler {
     this._mats = new Map(); // palette key -> THREE.Material
     this._static = new Map(); // palette key -> Accum
     this._protos = new Map(); // id -> { geo, key, instances[], masks[], opts }
-    // Review-only authored boundaries. These duplicate CPU-side merge data, not
-    // render objects: the game still emits the same palette batches below.
-    this._reviewScopes = new Map(); // id -> { metadata, staticByKey, counts }
-    this._reviewScope = null;
+    this.reviewCapture = reviewEnabled ? new ReviewCapture(this) : null;
     this.reviewStatics = [];
     this.reviewProps = [];
     this._collide = new Map(); // surface -> Accum
@@ -137,39 +136,29 @@ export class Assembler {
   // ------------------------------------------------------- review metadata --
   /**
    * Select the authored object/zone receiving subsequent geometry and prop
-   * placements. Re-selecting an id appends to the same semantic object, which
-   * lets a building shell and its later dressing remain one review actor.
+   * placements. Scope alone does not attach props: use an ownProps component
+   * region for fixtures that should move/hide with their assembly.
    */
   setReviewScope(scope = null) {
-    if (!this.reviewEnabled) return this;
-    if (!scope) {
-      this._reviewScope = null;
-      return this;
-    }
-    let record = this._reviewScopes.get(scope.id);
-    if (!record) {
-      record = {
-        ...scope,
-        tags: [...(scope.tags ?? [])],
-        staticByKey: new Map(),
-        placementCounts: new Map(),
-      };
-      this._reviewScopes.set(scope.id, record);
-    }
-    this._reviewScope = record;
+    this.reviewCapture?.setScope(scope);
     return this;
   }
 
-  _activeReviewScope() {
-    if (this._reviewScope) return this._reviewScope;
-    this.setReviewScope({
-      id: 'world',
-      name: 'World dressing',
-      category: 'Environment / Dressing',
-      sourceRef: 'src/world/index.js#WorldSystem.init',
-      tags: ['level', 'procedural', 'dressing'],
-    });
-    return this._reviewScope;
+  beginReviewPart(name, options) {
+    return this.reviewCapture?.beginPart(name, options) ?? NOOP;
+  }
+
+  withReviewPart(name, build, options) {
+    const end = this.beginReviewPart(name, options);
+    try { return build(); } finally { end(); }
+  }
+
+  beginReviewAssembly(scope) {
+    return this.reviewCapture?.beginAssembly(scope) ?? NOOP;
+  }
+
+  beginReviewScope(scope) {
+    return this.reviewCapture?.beginScope(scope) ?? NOOP;
   }
 
   // --------------------------------------------------------- static batch --
@@ -183,15 +172,7 @@ export class Assembler {
     }
     a.add(geo, worldMatrix, opts);
 
-    if (this.reviewEnabled) {
-      const scope = this._activeReviewScope();
-      let review = scope.staticByKey.get(key);
-      if (!review) {
-        review = new Accum(`review:${scope.id}:${key}`);
-        scope.staticByKey.set(key, review);
-      }
-      review.add(geo, worldMatrix, opts);
-    }
+    this.reviewCapture?.add(key, geo, worldMatrix, opts);
     return this;
   }
 
@@ -284,11 +265,8 @@ export class Assembler {
     p.matrices.push(placed);
     p.masks.push(masks ? [masks[0], masks[1], masks[2]] : null);
     if (this.reviewEnabled && p.review) {
-      const scope = this._activeReviewScope();
-      if (scope.reviewProps === false) return this;
-      const count = (scope.placementCounts.get(id) ?? 0) + 1;
-      scope.placementCounts.set(id, count);
-      p.reviewPlacements.push({ matrix: placed, scope, ordinal: count });
+      const placement = this.reviewCapture.place(id, placed);
+      if (placement) p.reviewPlacements.push(placement);
     }
     return this;
   }
@@ -401,33 +379,6 @@ export class Assembler {
       this.stats.drawCalls++;
     }
 
-    // Semantic review meshes are deliberately not parented into the render
-    // scene. Their vertices are the same world-space data, regrouped by authored
-    // object rather than by the renderer's material/draw-call boundary.
-    for (const scope of this._reviewScopes.values()) {
-      const roots = [];
-      for (const [key, acc] of scope.staticByKey) {
-        if (acc.empty) continue;
-        const mesh = new THREE.Mesh(acc.build(), this.mat(key));
-        mesh.name = `review_${scope.id}_${key}`;
-        mesh.matrixAutoUpdate = false;
-        mesh.userData.surface = this.surfaceOf(key);
-        mesh.userData.reviewOnly = true;
-        mesh.updateMatrix();
-        roots.push(mesh);
-      }
-      if (roots.length > 0) {
-        this.reviewStatics.push({
-          id: scope.id,
-          name: scope.name,
-          category: scope.category,
-          sourceRef: scope.sourceRef,
-          tags: scope.tags,
-          roots,
-        });
-      }
-    }
-
     // --- instanced props ---
     for (const p of this._protos.values()) {
       const n = p.matrices.length;
@@ -501,6 +452,9 @@ export class Assembler {
       p.masks.length = 0;
     }
 
+    // Assemble the review graph only after all shared prototype materials exist.
+    this.reviewStatics = this.reviewCapture?.finalize(this.reviewProps) ?? [];
+
     // --- collision proxies ---
     this.collisionRoot = new THREE.Group();
     this.collisionRoot.name = 'world_collision';
@@ -549,9 +503,7 @@ export class Assembler {
       m.parent?.remove(m);
     }
     for (const c of this.collisionRoot?.children ?? []) c.geometry?.dispose();
-    for (const semantic of this.reviewStatics) {
-      for (const root of semantic.roots) root.geometry?.dispose();
-    }
+    this.reviewCapture?.dispose();
     this.meshes.length = 0;
     this.lodGroups.length = 0;
     this.reviewStatics.length = 0;
@@ -559,8 +511,6 @@ export class Assembler {
     for (const p of this._protos.values()) p.geo?.dispose();
     this._protos.clear();
     this._static.clear();
-    this._reviewScopes.clear();
-    this._reviewScope = null;
     this._collide.clear();
   }
 }

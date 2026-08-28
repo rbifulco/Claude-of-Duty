@@ -132,14 +132,15 @@ export class WorldSystem {
         category: 'Environment / Buildings',
         sourceRef: `src/world/layout.js#BUILDINGS.${spec.id}`,
         tags: ['level', 'procedural', 'building', spec.id.toLowerCase()],
+        frame: new THREE.Matrix4().makeTranslation(spec.x, 0, spec.z),
       });
       const info = buildBuilding(A, rng, spec);
       infos.push(info);
       if (spec.collapse) {
-        collapseRoof(A, rng, spec, info, {
+        A.withReviewPart('Roof damage', () => collapseRoof(A, rng, spec, info, {
           x: spec.x + rng.range(-2, 2),
           z: spec.z + rng.range(-2, 2),
-        });
+        }));
       }
     }
     this.buildings = infos;
@@ -150,6 +151,7 @@ export class WorldSystem {
       category: 'Environment / Architecture',
       sourceRef: 'src/world/dressing.js#buildGate',
       tags: ['level', 'procedural', 'gate'],
+      frame: new THREE.Matrix4().makeTranslation(0, 0, GATE.z),
     });
     buildGate(A, rng);
     A.setReviewScope({
