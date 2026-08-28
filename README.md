@@ -65,6 +65,33 @@ Production hosting must allow the exact official editor origin in its
 `Content-Security-Policy: frame-ancestors` response header and must not send an
 `X-Frame-Options` value that blocks that origin.
 
+## GitHub Pages
+
+The published game lives at <https://rbifulco.github.io/Claude-of-Duty/>.
+Paste that full URL, including the project path, into Spatial Review.
+
+The [Pages workflow](.github/workflows/pages.yml) tests, builds, and deploys every
+push to `spatial-review-pages`; `main` is not changed or deployed by this workflow.
+GitHub Pages must use **GitHub Actions** as its publishing source, and the
+`github-pages` environment must allow the `spatial-review-pages` branch.
+The workflow obtains the site's base path from GitHub and embeds the source
+commit in the review build identity. No deployment token or secret is needed.
+
+To reproduce the project-path build locally:
+
+```bash
+npm ci --ignore-scripts
+npm run test:spatial-review
+npm run build -- --base=/Claude-of-Duty/
+npm run test:pages
+npm run preview
+# Open http://127.0.0.1:4173/Claude-of-Duty/
+```
+
+Local development still uses `/`. Deploy only `dist/`, not raw source or the
+repository root. If a proxy/custom domain is introduced, ensure its framing
+headers still permit the official editor; no broad origin access is added here.
+
 ## What's in it
 
 | subsystem | what it does |

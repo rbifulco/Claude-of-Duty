@@ -53,7 +53,7 @@ function fixture(reviewEnabled = true, scopeId = 'building-w1') {
   return { A, root, engine, dispose() { A.dispose(); materials.forEach(m => m.dispose()); } };
 }
 
-function fakeWindow() {
+function fakeWindow(href = 'http://127.0.0.1:5174/') {
   const previous = globalThis.window;
   const listeners = new Map();
   const messages = [];
@@ -61,7 +61,7 @@ function fakeWindow() {
     messages.push({ value: structuredClone(value, { transfer }), origin });
   } };
   globalThis.window = {
-    location: new URL('http://127.0.0.1:5174/'),
+    location: new URL(href),
     parent: peer,
     opener: null,
     setTimeout,
@@ -83,6 +83,23 @@ function fakeWindow() {
   };
 }
 const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+
+test('discovery preserves the GitHub Pages project path', (t) => {
+  const page = fakeWindow('https://rbifulco.github.io/Claude-of-Duty/?q=high#play');
+  const detach = attachClaudeOfDutyDiscovery();
+  t.after(() => { try { detach(); } finally { page.restore(); } });
+  page.messages.length = 0;
+  page.send({ type: SPATIAL_REVIEW_DISCOVERY_REQUEST, requestId: 'pages-discovery' });
+  const discovery = page.messages[0].value.discovery;
+  assert.equal(discovery.websiteUrl, 'https://rbifulco.github.io/Claude-of-Duty/');
+  const capture = new URL(discovery.liveCapture);
+  assert.equal(capture.origin, 'https://rbifulco.github.io');
+  assert.equal(capture.pathname, '/Claude-of-Duty/');
+  assert.equal(capture.searchParams.get('spatial-review-capture'), '1');
+  assert.equal(capture.searchParams.get('prewarm'), '0');
+  assert.equal(capture.searchParams.has('q'), false);
+  assert.equal(capture.hash, '');
+});
 
 test('review metadata does not change renderer geometry, instances, or draw counts', () => {
   const regular = fixture(false);
