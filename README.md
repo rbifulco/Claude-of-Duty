@@ -19,15 +19,15 @@ R reload, Shift sprint, Ctrl crouch, Space jump, Q/E lean, Esc release.
 
 ## Spatial review
 
-The live Three.js world currently uses the published Spatial Review SDK **0.4.0**, pinned
+The live Three.js world currently uses the published Spatial Review SDK **0.5.0**, pinned
 with its protocol in `package.json` and `package-lock.json`. Both share the
 game's Three.js 0.180.0 runtime; no sibling checkout is needed. The bridge
 explicitly authorizes the official editor at `https://spatial-review.alterno.dev`
 and loopback editors during local development. Open the game URL in that editor
 to inspect the procedural market scene and the **Environment review tour**.
 The adapter also implements the accepted `scene-assemblies-v1` contract and
-activates it when the installed SDK exposes `registerAssembly`; SDK 0.4.0 keeps
-serving the tested flat v6 fallback until the accepted package release is installed.
+activates it through SDK 0.5.0's `registerAssembly` API. Older SDKs without that
+API retain the tested flat v6 fallback.
 
 Scene composition follows authored ownership without changing the optimized
 render graph. Buildings, palms, street lamps, freestanding sandbag walls, and the
@@ -35,9 +35,9 @@ gate are transform-only assemblies. Their structure and attached fixtures are
 independent child placements: move them with their owner in Scene or select one
 fixture without collapsing it into the building asset. Repeated AC units, dishes,
 bags, and other props share their canonical `prop-*` assets across owners. Loose
-crates, furniture, and surroundings remain World-level placements. SDK 0.4.0's
-fallback instead combines owned parts into one composite actor so it never emits
-dangling parent references.
+crates, furniture, and surroundings remain World-level placements. The retained
+SDK 0.4.0 compatibility path instead combines owned parts into one composite
+actor so it never emits dangling parent references.
 Stochastic street/ground micro-scatter, bullet pocks, and generated contact
 fillets stay below the review scale. Each live enemy remains separate.
 
@@ -58,8 +58,9 @@ npm run build
 The advertised `?spatial-review-capture=1&prewarm=0` page uses seed `0x5eed1234`
 and the six enemies' initial poses, draws once, and does not run gameplay behind
 the editor. Normal play remains randomized and animated. Compatible editors
-automatically negotiate 0.4.0's progressive asset and transferable-geometry
-capabilities; older editors retain the full-catalog fallback.
+automatically negotiate progressive assets, transferable geometry, and 0.5.0's
+ownership hierarchy independently; editors that do not negotiate hierarchy
+receive the flattened full-catalog fallback.
 
 Build identity is `ownership-v7` plus `VITE_GIT_COMMIT` (or a clearly labeled
 `development` fallback). Start a new review baseline when migrating from v6:
