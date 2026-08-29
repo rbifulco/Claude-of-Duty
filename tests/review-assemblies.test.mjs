@@ -102,7 +102,7 @@ test('full procedural world: source-owned assemblies and unchanged rendering', a
     building.updateMatrixWorld(true);
   });
 
-  await t.test('registry has no duplicate child actors and exports named, traceable hierarchy', () => {
+  await t.test('installed registry has no duplicate actors and exports named, traceable structures', () => {
     const previous = globalThis.window;
     globalThis.window = {
       location: new URL('http://localhost/'), parent: { postMessage() {} }, opener: null,
@@ -111,20 +111,21 @@ test('full procedural world: source-owned assemblies and unchanged rendering', a
     const bridge = attachClaudeOfDutyScene({ ctx: { get: id => id === 'world' ? world : { agents: [] } } });
     try {
       const actors = bridge.registry.toActors();
-      const looseCount = A.reviewProps.reduce((sum, p) => sum + p.placements.filter(p => !p.ownerId).length, 0);
-      assert.equal(actors.length, A.reviewStatics.length + looseCount);
+      const placementCount = A.reviewProps.reduce((sum, prop) => sum + prop.placements.length, 0);
+      assert.equal(bridge.composition.hierarchical, true);
+      assert.equal(bridge.composition.assemblies, A.reviewAssemblies.length);
+      assert.equal(actors.length, A.reviewStructures.length + placementCount);
       assert.equal(new Set(actors.map(a => a.actorId)).size, actors.length);
       assert.equal(bridge.composition.attachedParts, ownedMeshes.size);
-      assert.equal(actors.some(a => a.assetId === 'prop-sat-dish'), false);
+      assert.equal(actors.some(a => a.assetId === 'prop-sat-dish'), true);
       const asset = bridge.registry.toAsset('environment-building-be1', 'review');
       const names = new Set(asset.nodes.map(n => n.name));
       for (const name of ['Foundation', 'Floor 1', 'Facade north', 'Wall', 'Facade services', 'Roof', 'Services']) {
         assert.ok(names.has(name), `missing component ${name}`);
       }
-      const fixture = asset.nodes.find(n => n.name.startsWith('Ac unit '));
-      assert.ok(fixture.parentId);
-      assert.ok(fixture.sourceRef.includes('src/world/layout.js#BUILDINGS.BE1'), fixture.sourceRef);
-      assert.ok(fixture.sourceRef.includes(fixture.id), fixture.sourceRef);
+      const sourced = asset.nodes.find(node => node.name === 'Facade services');
+      assert.ok(sourced.sourceRef.includes('src/world/layout.js#BUILDINGS.BE1'), sourced.sourceRef);
+      assert.ok(sourced.sourceRef.includes(sourced.id), sourced.sourceRef);
       assert.deepEqual(asset.nodes.map(n => n.id), bridge.registry.toAsset(asset.id, 'review').nodes.map(n => n.id));
     } finally {
       bridge.dispose();
@@ -133,13 +134,13 @@ test('full procedural world: source-owned assemblies and unchanged rendering', a
     }
   });
 
-  await t.test('accepted SDK exports transform-only owners and independent shared placements', {
-    skip: !process.env.SPATIAL_REVIEW_SDK_PATH,
-  }, async () => {
-    const sdk = await import(pathToFileURL(resolve(
-      process.env.SPATIAL_REVIEW_SDK_PATH,
-      'packages/sdk/dist/index.js',
-    )).href);
+  await t.test('published or injected SDK exports transform-only owners and independent shared placements', async () => {
+    const sdk = process.env.SPATIAL_REVIEW_SDK_PATH
+      ? await import(pathToFileURL(resolve(
+        process.env.SPATIAL_REVIEW_SDK_PATH,
+        'packages/sdk/dist/index.js',
+      )).href)
+      : await import('@alterno-dev/spatial-review');
     const bridge = attachClaudeOfDutyScene(
       { ctx: { get: id => id === 'world' ? world : { agents: [] } } },
       { SceneAssetRegistry: sdk.SceneAssetRegistry, attachSceneAssetRegistryBridge: () => () => {} },

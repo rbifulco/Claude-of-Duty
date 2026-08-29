@@ -9,19 +9,20 @@ registered data categories, or framing permissions have been added.
 
 | Area | Decision / authoritative source |
 | --- | --- |
-| Dependencies | Keep the published npm SDK/protocol 0.4.0 fallback until the accepted `scene-assemblies-v1` package release is available, sharing the game's Three.js 0.180.0. Cross-repository validation injects the accepted SDK build explicitly. |
+| Dependencies | Pin the published npm SDK/protocol 0.5.0 release, sharing the game's Three.js 0.180.0. Cross-repository validation can still inject a sibling SDK build explicitly for pre-release changes. |
 | Actors | Transform-only owners for buildings, palms, lamps, sandbag walls, and the gate. Register structure and attached fixtures as independent child placements. Keep loose placements at World; retain broad context zones. |
 | Assets | Preserve placement-specific procedural structure assets. Every repeated prop, attached or loose, references its canonical `prop-*` prototype asset. |
 | Navigation | Keep the five-view review tour sourced from `SHOTS` in `src/dev/shots.js`. Linear transitions are a review-only approximation, not a gameplay route. |
 | Capture | Use the existing RNG with fixed seed `0x5eed1234`, six boot-pose enemies, one hero-view render, and no running simulation or frame-stat polling. Hide the unposed first-person rig in this snapshot only. Ordinary gameplay remains unchanged. |
-| Lifecycle | Discovery starts on the ordinary entry page; an unflagged editor iframe serves only that lightweight bridge so cold game boot cannot starve the handshake. The scene bridge starts after construction in top-level play or the explicitly flagged live-capture iframe. Both detach on HMR. Refresh rebuilds the snapshot; SDK 0.4.0 negotiates progressive assets automatically. |
+| Lifecycle | Discovery starts on the ordinary entry page; an unflagged editor iframe serves only that lightweight bridge so cold game boot cannot starve the handshake. The scene bridge starts after construction in top-level play or the explicitly flagged live-capture iframe. Both detach on HMR. Refresh rebuilds the snapshot; SDK 0.5.0 negotiates ownership, progressive assets, and transferable geometry independently. |
 
-The installed 0.4.0 SDK supports cached transforms/bounds, ref-counted runtime
-resources, and negotiated progressive/transferable geometry. Older editors can
-still request the complete JSON catalog. The adapter feature-detects
-`registerAssembly`: 0.4.0 receives the existing composite flat graph, while the
-accepted SDK receives the v7 hierarchy. This upgrade does not deploy or modify
-the editor itself. The ownership refinement follows
+The installed 0.5.0 SDK supports cached transforms/bounds, ref-counted runtime
+resources, negotiated progressive/transferable geometry, and transform-only
+assemblies. Hierarchy-aware editors receive the v7 ownership graph; consumers
+that do not negotiate hierarchy receive a flattened world-space catalog. The
+adapter retains `registerAssembly` feature detection so an explicitly installed
+0.4.0 SDK still receives the existing composite flat graph. This upgrade does
+not deploy or modify the editor itself. The ownership refinement follows
 [Structuring for review](https://github.com/rbifulco/alterno-spatial-review/blob/main/agents/structuring-for-review.md).
 
 ## Assembly ownership
@@ -45,7 +46,7 @@ but does **not** attach every prop in a region. `src/world/review.js` captures
 static construction, geometry-free pivots, and placements in detached review-only
 roots. The adapter registers each owned prop once with `parentAssemblyId`; each
 captured piece has exactly one owner. It also retains separate composite roots
-only for the SDK 0.4.0 flat fallback. The normal material/instance batches are unchanged.
+only for the older-SDK flat fallback. The normal material/instance batches are unchanged.
 
 Building structure assets expose construction groups, not just one palette mesh:
 `Floor 1 / Facade north / Bay 1 door`, `Roof / Services`, `Interiors / Floor 1`,
@@ -150,8 +151,8 @@ transfer-buffer ownership, cleanup, and camera/aim source mappings.
 packages (not local links) and a single Three.js 0.180.0 runtime. The installed
 dependency tree reports an existing `nanoid` advisory in Vite's development
 toolchain; it is unrelated to Spatial Review and is not automatically upgraded.
-Before package publication, run the accepted SDK in a browser without changing
-the production dependency:
+For pre-release SDK development, run a sibling build in a browser without
+changing the production dependency:
 
 ```sh
 SPATIAL_REVIEW_SDK_PATH=/absolute/path/to/alterno-spatial-review \
@@ -163,9 +164,11 @@ used by ordinary builds or the deployed Pages branch.
 
 ### Ownership-first migration verification (v7, 2026-08-29)
 
-- All 17 adapter tests pass with the accepted sibling SDK build. The deterministic
-  harness exports 45 transform-only assemblies, 26 structure/context placements,
-  and 3,206 owned or World-level prop placements referencing 58 canonical prop assets.
+- All 17 adapter tests pass with the published registry SDK/protocol 0.5.0; the
+  optional sibling-build injection exercises the same ownership assertions for
+  pre-release SDK changes. The deterministic harness exports 45 transform-only
+  assemblies, 26 structure/context placements, and 3,206 owned or World-level
+  prop placements referencing 58 canonical prop assets.
 - Owners contain no geometry. Building BE1's structure and attached AC placements
   point to `building-be1`; ACs under other buildings retain distinct actor IDs and
   the same `prop-ac-unit` asset ID.
@@ -181,8 +184,9 @@ used by ordinary builds or the deployed Pages branch.
   were independently focusable, and the selected AC reported its shared design
   across 110 placements. The discovery-only iframe gate also kept a cold game
   boot from consuming the editor's handshake window.
-- SDK 0.4.0 still passes the legacy fallback suite. Publishing and installing the
-  accepted ownership-capable SDK is required before the deployed capture advertises v7.
+- Published SDK/protocol 0.5.0 activate the ownership-capable v7 capture. The
+  adapter's explicit 0.4.0 compatibility path passed the migration fallback suite;
+  consumers that do not negotiate hierarchy still receive a flattened export.
 
 ### Assembly refinement verification (v6, 2026-08-28)
 
