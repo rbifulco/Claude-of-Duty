@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Accum, trs } from './util.js';
 import { PALETTE } from './palette.js';
+import { ReviewCapture } from './review.js';
 
 /**
  * WORLD — the assembler.
@@ -37,15 +38,20 @@ const _UP = new THREE.Vector3(0, 1, 0);
  * cascades, which is the wrong trade at this map size.
  */
 const CHUNK = 64;
+const NOOP = () => {};
 
 export class Assembler {
-  constructor({ materials, rng, render }) {
+  constructor({ materials, rng, render, reviewEnabled = false }) {
     this.materials = materials;
     this.rng = rng;
     this.render = render;
+    this.reviewEnabled = reviewEnabled;
     this._mats = new Map(); // palette key -> THREE.Material
     this._static = new Map(); // palette key -> Accum
     this._protos = new Map(); // id -> { geo, key, instances[], masks[], opts }
+    this.reviewCapture = reviewEnabled ? new ReviewCapture(this) : null;
+    this.reviewStatics = [];
+    this.reviewProps = [];
     this._collide = new Map(); // surface -> Accum
     this._geoCache = new Map(); // kit piece key -> BufferGeometry
     this.lights = [];
@@ -127,15 +133,46 @@ export class Assembler {
     return PALETTE[key]?.surface ?? 'concrete';
   }
 
+  // ------------------------------------------------------- review metadata --
+  /**
+   * Select the authored object/zone receiving subsequent geometry and prop
+   * placements. Scope alone does not attach props: use an ownProps component
+   * region for fixtures that should move/hide with their assembly.
+   */
+  setReviewScope(scope = null) {
+    this.reviewCapture?.setScope(scope);
+    return this;
+  }
+
+  beginReviewPart(name, options) {
+    return this.reviewCapture?.beginPart(name, options) ?? NOOP;
+  }
+
+  withReviewPart(name, build, options) {
+    const end = this.beginReviewPart(name, options);
+    try { return build(); } finally { end(); }
+  }
+
+  beginReviewAssembly(scope) {
+    return this.reviewCapture?.beginAssembly(scope) ?? NOOP;
+  }
+
+  beginReviewScope(scope) {
+    return this.reviewCapture?.beginScope(scope) ?? NOOP;
+  }
+
   // --------------------------------------------------------- static batch --
   /** Merge a transformed geometry into the batch for `key`. */
   add(key, geo, matrix = null, opts = null) {
+    const worldMatrix = this._x(matrix);
     let a = this._static.get(key);
     if (!a) {
       a = new Accum(`world:${key}`);
       this._static.set(key, a);
     }
-    a.add(geo, this._x(matrix), opts);
+    a.add(geo, worldMatrix, opts);
+
+    this.reviewCapture?.add(key, geo, worldMatrix, opts);
     return this;
   }
 
@@ -189,6 +226,7 @@ export class Assembler {
       tilt: spec.tilt ?? 0,
       sink: spec.sink ?? 0,
       key: spec.key,
+      sourceRef: spec.sourceRef ?? `src/world/props.js#${id}`,
       /**
        * Radius, in metres, of the swept dust fillet `put()` should drop under
        * every instance of this prototype. Nothing in the frame currently
@@ -205,6 +243,8 @@ export class Assembler {
       maxDist: spec.maxDist ?? 0,
       matrices: [],
       masks: [],
+      review: spec.review !== false,
+      reviewPlacements: [],
       noPrepass: !!spec.noPrepass,
     });
     return id;
@@ -221,8 +261,13 @@ export class Assembler {
       console.warn(`[world] no prop prototype "${id}"`);
       return this;
     }
-    p.matrices.push(this._x(matrix).clone());
+    const placed = this._x(matrix).clone();
+    p.matrices.push(placed);
     p.masks.push(masks ? [masks[0], masks[1], masks[2]] : null);
+    if (this.reviewEnabled && p.review) {
+      const placement = this.reviewCapture.place(id, placed);
+      if (placement) p.reviewPlacements.push(placement);
+    }
     return this;
   }
 
@@ -357,6 +402,16 @@ export class Assembler {
       }
 
       const mat = this.mat(p.key);
+      if (p.reviewPlacements.length > 0) {
+        this.reviewProps.push({
+          id: p.id,
+          key: p.key,
+          sourceRef: p.sourceRef,
+          geometry: p.geo,
+          material: mat,
+          placements: p.reviewPlacements,
+        });
+      }
       for (const list of buckets.values()) {
         const im = new THREE.InstancedMesh(p.geo, mat, list.length);
         im.name = `prop_${p.id}`;
@@ -396,6 +451,11 @@ export class Assembler {
       p.matrices.length = 0;
       p.masks.length = 0;
     }
+
+    // Assemble the review graph only after all shared prototype materials exist.
+    this.reviewStatics = this.reviewCapture?.finalize(this.reviewProps) ?? [];
+    this.reviewStructures = this.reviewCapture?.structures ?? [];
+    this.reviewAssemblies = this.reviewCapture?.assemblies ?? [];
 
     // --- collision proxies ---
     this.collisionRoot = new THREE.Group();
@@ -445,8 +505,11 @@ export class Assembler {
       m.parent?.remove(m);
     }
     for (const c of this.collisionRoot?.children ?? []) c.geometry?.dispose();
+    this.reviewCapture?.dispose();
     this.meshes.length = 0;
     this.lodGroups.length = 0;
+    this.reviewStatics.length = 0;
+    this.reviewProps.length = 0;
     for (const p of this._protos.values()) p.geo?.dispose();
     this._protos.clear();
     this._static.clear();

@@ -375,12 +375,12 @@ export const SET_PIECES = {
     [1.2, -30.0, 0.2],
     [-3.0, -34.0, 0.0],
   ],
-  /** Sandbag emplacements: [x, z, ry, length] */
+  /** Sandbag emplacements: [x, z, ry, length, stable review ID] */
   sandbagWalls: [
-    [-3.6, 11.0, 0.0, 3.0],
-    [3.6, -2.0, 0.0, 2.6],
-    [-1.6, -18.5, 1.57, 2.4],
-    [3.4, -27.0, 0.0, 3.2],
+    [-3.6, 11.0, 0.0, 3.0, 'west-market'],
+    [3.6, -2.0, 0.0, 2.6, 'east-market'],
+    [-1.6, -18.5, 1.57, 2.4, 'west-alley'],
+    [3.4, -27.0, 0.0, 3.2, 'east-gate-approach'],
   ],
   /** Burnt-out vehicles: [x, z, ry, rollDeg] */
   wrecks: [
@@ -388,23 +388,23 @@ export const SET_PIECES = {
     [-2.8, -28.5, -2.6, 4],
     [4.9, 24.0, 1.5, 0],
   ],
-  /** Palm trees: [x, z, scale] */
+  /** Palm trees: [x, z, scale, stable review ID] */
   palms: [
-    [-5.4, 20.0, 1.0],
-    [5.5, 6.5, 1.1],
-    [-5.5, -4.5, 0.92],
-    [5.6, -20.5, 1.05],
-    [-5.5, -32.0, 1.0],
-    [8.5, 5.0, 0.85],
-    [-9.0, -10.2, 0.9],
+    [-5.4, 20.0, 1.0, 'west-entry'],
+    [5.5, 6.5, 1.1, 'east-market'],
+    [-5.5, -4.5, 0.92, 'west-market'],
+    [5.6, -20.5, 1.05, 'east-alley'],
+    [-5.5, -32.0, 1.0, 'west-gate'],
+    [8.5, 5.0, 0.85, 'east-courtyard'],
+    [-9.0, -10.2, 0.9, 'west-courtyard'],
   ],
-  /** Street lamps: [x, z, ry] — ry points the arm across the street. */
+  /** Street lamps: [x, z, legacy ry, stable review ID]. Builder faces the street. */
   lamps: [
-    [-5.9, 15.0, -Math.PI / 2],
-    [5.9, 3.0, Math.PI / 2],
-    [-5.9, -11.0, -Math.PI / 2],
-    [5.9, -24.0, Math.PI / 2],
-    [-5.9, -36.0, -Math.PI / 2],
+    [-5.9, 15.0, -Math.PI / 2, 'west-entry'],
+    [5.9, 3.0, Math.PI / 2, 'east-market'],
+    [-5.9, -11.0, -Math.PI / 2, 'west-alley'],
+    [5.9, -24.0, Math.PI / 2, 'east-gate-approach'],
+    [-5.9, -36.0, -Math.PI / 2, 'west-gate'],
   ],
   /** Overhead cable spans: [x0, y0, z0, x1, y1, z1, sag] */
   cables: [

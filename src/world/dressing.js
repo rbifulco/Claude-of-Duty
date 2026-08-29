@@ -151,7 +151,12 @@ function nearestWall(x, z) {
 // =============================================================== prototypes ==
 /** Props that only the dressing pass uses. */
 export function registerDressingProps(A, rng) {
-  const P = (id, key, geo, opts = {}) => A.proto(id, { geo, key, ...opts });
+  const P = (id, key, geo, opts = {}) => A.proto(id, {
+    geo,
+    key,
+    sourceRef: `src/world/dressing.js#registerDressingProps.${id}`,
+    ...opts,
+  });
 
   P('wreck', 'metal_dark', burntCar(rng), { chunk: false });
 
@@ -924,10 +929,12 @@ function barriers(A, rng) {
 
 // --- sandbags ---------------------------------------------------------------
 function sandbagEmplacements(A, rng) {
-  for (const [x, z, ry, len] of SET_PIECES.sandbagWalls) {
+  for (const [x, z, ry, len, id] of SET_PIECES.sandbagWalls) {
     // 5 courses: interpenetrating, load-squashed bags stack lower than the old
     // rigid 15.5 cm pitch did, and this cover has to stay chest-high to a crouch
-    sandbagWall(A, rng, x, z, ry, len, 5);
+    sandbagWall(A, rng, x, z, ry, len, 5, null, {
+      id, sourceRef: `src/world/layout.js#SET_PIECES.sandbagWalls:${id}`,
+    });
   }
 }
 
@@ -948,14 +955,25 @@ function sandbagEmplacements(A, rng) {
  *
  * `baseY` puts the run on a roof or a rampart walkway instead of the street.
  */
-export function sandbagWall(A, rng, x, z, ry, len, courses = 3, baseY = null) {
+export function sandbagWall(A, rng, x, z, ry, len, courses = 3, baseY = null, review) {
   const y = baseY ?? groundY(x, z);
+  // Elevated ramparts are components of their gate; freestanding walls own
+  // their bags but not the dirt, loose crates or litter around their feet.
+  const endBags = review.attached
+    ? A.beginReviewPart(['Rampart defences', review.id], { ownProps: true })
+    : A.beginReviewAssembly({
+      id: `sandbags-${review.id}`, name: `Sandbag wall ${review.id}`,
+      category: 'Assemblies / Cover', tags: ['assembly', 'sandbag-wall'],
+      sourceRef: review.sourceRef ?? `src/world/dressing.js#sandbagWall:${review.id}`,
+      frame: new THREE.Matrix4().makeRotationY(ry).setPosition(x, y, z),
+    });
   const BAG_W = 0.5;
   const BAG_H = 0.17;
   const IDS = ['sandbag_a', 'sandbag_b', 'sandbag_c'];
   let cy = y + 0.01;
   let prev = -1;
   for (let c = 0; c < courses; c++) {
+    const endCourse = A.beginReviewPart(`Course ${c + 1}`);
     // load from the bags above: the bottom of a five-high wall carries most of it
     const load = (courses - 1 - c) / Math.max(1, courses - 1);
     const squash = 1 - load * 0.19; // vertical
@@ -994,10 +1012,12 @@ export function sandbagWall(A, rng, x, z, ry, len, courses = 3, baseY = null) {
         rng.range(-0.11, 0.11)
       );
     }
+    endCourse();
     // the next course beds 1.5-2.5 cm into this one
     cy += bagH - rng.range(0.015, 0.025);
   }
   const h = Math.max(0.2, cy - y + 0.06);
+  endBags();
   A.box('fabric', x, y + h / 2, z, len, h, 0.46, ry);
   if (baseY !== null) return; // a rampart run: no ground clutter behind it
   // spilled sand and grit along the foot of the run: bags leak, and the line
@@ -1077,12 +1097,18 @@ function wrecks(A, rng) {
 
 // --- palms ------------------------------------------------------------------
 function palms(A, rng) {
-  for (const [x, z, s] of SET_PIECES.palms) {
+  for (const [x, z, s, id] of SET_PIECES.palms) {
     const y = groundY(x, z);
     const ry = rng.float() * 6.28;
-    A.put('palm_trunk', x, y, z, ry, s, [1, rng.range(0.8, 1.2), 1]);
+    const endPalm = A.beginReviewAssembly({
+      id: `palm-${id}`, name: `Palm ${id}`, category: 'Assemblies / Vegetation',
+      tags: ['assembly', 'palm'], sourceRef: `src/world/layout.js#SET_PIECES.palms:${id}`,
+      frame: new THREE.Matrix4().makeRotationY(ry).setPosition(x, y, z),
+    });
+    A.withReviewPart('Trunk', () => A.put('palm_trunk', x, y, z, ry, s, [1, rng.range(0.8, 1.2), 1]));
     const topY = y + 5.4 * s;
     const n = rng.int(8, 11);
+    const endCrown = A.beginReviewPart('Crown');
     for (let i = 0; i < n; i++) {
       const a = ry + (i / n) * 6.28 + rng.range(-0.16, 0.16);
       const tilt = rng.range(-0.55, 0.15);
@@ -1105,6 +1131,8 @@ function palms(A, rng) {
       const a = ry + rng.float() * 6.28;
       A.putS('palm_frond', x, topY - 0.35, z, a, s * 0.8, s * 0.8, s * 0.8, [1, 1.6, 1], 0, -1.35);
     }
+    endCrown();
+    endPalm();
     A.box('wood', x, y + 2.7 * s, z, 0.42 * s, 5.4 * s, 0.42 * s);
     // ring of dirt, weeds and litter at the base
     const g = patchGeometry(rng, rng.range(0.9, 1.4), { lobes: 10, wobble: 0.45 });
@@ -1126,25 +1154,35 @@ function palms(A, rng) {
 
 // --- street lamps -----------------------------------------------------------
 function streetLamps(A, rng) {
-  for (const [x, z] of SET_PIECES.lamps) {
+  for (const [x, z, , id] of SET_PIECES.lamps) {
     const y = groundY(x, z);
     // the arm must reach across the street, so face it inward
     const ry = x < 0 ? 0 : Math.PI;
+    const lampScope = {
+      id: `lamp-${id}`, name: `Street lamp ${id}`, category: 'Assemblies / Fixtures',
+      tags: ['assembly', 'street-lamp'], sourceRef: `src/world/layout.js#SET_PIECES.lamps:${id}`,
+      frame: new THREE.Matrix4().makeRotationY(ry).setPosition(x, y, z),
+    };
+    const endLamp = A.beginReviewAssembly(lampScope);
     A.put('lamp_post', x, y, z, ry, 1, [1, rng.range(0.9, 1.2), 1]);
     const armX = x + Math.cos(ry) * 0.88;
     const armZ = z - Math.sin(ry) * 0.88;
     A.put('lamp_glass', armX, y + 5.33, armZ, ry, 1, null, 0, -0.16);
+    endLamp();
     A.box('metal', x, y + 2.7, z, 0.3, 5.4, 0.3);
     // the column stands in a broken square of concrete, not on a clean line
     groundSkirt(A, rng, x, y, z, 0.34, { pebbles: rng.int(3, 6) });
     A.lampAnchors.push({ x: armX, y: y + 5.3, z: armZ });
     // a hanging sign or a bundle of cable ties at head height
     if (rng.float() < 0.5) {
-      A.put('sign_hang', x + Math.cos(ry) * 0.2, y + 3.4, z - Math.sin(ry) * 0.2, ry + Math.PI / 2, 1, [
+      // Re-enter the explicit owner without capturing the surrounding scatter.
+      const endSign = A.beginReviewScope({ ...lampScope, ownProps: true });
+      A.withReviewPart('Attached sign', () => A.put('sign_hang', x + Math.cos(ry) * 0.2, y + 3.4, z - Math.sin(ry) * 0.2, ry + Math.PI / 2, 1, [
         1,
         1.2,
         1,
-      ]);
+      ]));
+      endSign();
     }
     for (let i = 0; i < rng.int(2, 5); i++) {
       const a = rng.float() * 6.28;
@@ -1363,17 +1401,17 @@ function tyreStacks(A, rng) {
  */
 function coverClusters(A, rng) {
   const spots = [
-    [0.6, 0.9, 0.35],
-    [-2.2, 8.6, 1.2],
-    [2.6, -6.4, -0.4],
-    [-3.0, -21.5, 0.6],
-    [2.2, -33.0, 1.9],
-    [-2.6, 27.5, 0.2],
+    [0.6, 0.9, 0.35, 'cover-center'],
+    [-2.2, 8.6, 1.2, 'cover-market-west'],
+    [2.6, -6.4, -0.4, 'cover-market-east'],
+    [-3.0, -21.5, 0.6, 'cover-alley-west'],
+    [2.2, -33.0, 1.9, 'cover-gate-east'],
+    [-2.6, 27.5, 0.2, 'cover-entry-west'],
   ];
-  for (const [x, z, ry] of spots) {
+  for (const [x, z, ry, id] of spots) {
     const y = groundY(x, z);
     // six squashed courses ≈ 0.8 m: cover you can shoot over crouched, not standing
-    sandbagWall(A, rng, x, z, ry, rng.range(1.8, 2.8), 6);
+    sandbagWall(A, rng, x, z, ry, rng.range(1.8, 2.8), 6, null, { id });
     const bx = x + Math.cos(ry + 1.57) * 1.5;
     const bz = z - Math.sin(ry + 1.57) * 1.5;
     if (isOpen(bx, bz, 0.4)) {
@@ -1409,7 +1447,25 @@ function coverClusters(A, rng) {
  */
 export function dressBuildings(A, rng, infos) {
   A.jitter = jitterRig();
-  for (const info of infos) dressBuilding(A, rng, info);
+  for (const info of infos) {
+    const id = info.spec.id;
+    A.setReviewScope({
+      id: `building-${id.toLowerCase()}`,
+      name: `Building ${id}`,
+      category: 'Environment / Buildings',
+      sourceRef: `src/world/layout.js#BUILDINGS.${id}`,
+      tags: ['level', 'procedural', 'building', id.toLowerCase()],
+      frame: new THREE.Matrix4().makeTranslation(info.spec.x, 0, info.spec.z),
+    });
+    dressBuilding(A, rng, info);
+  }
+  A.setReviewScope({
+    id: 'overhead-services',
+    name: 'Overhead services',
+    category: 'Environment / Fixtures',
+    sourceRef: 'src/world/dressing.js#alleyLines',
+    tags: ['level', 'procedural', 'cables', 'laundry'],
+  });
   alleyLines(A, rng, infos);
   A.jitter = null;
 }
@@ -1419,6 +1475,7 @@ function dressBuilding(A, rng, info) {
   const top = info.roofY;
 
   // ---- AC units, conduit and sat dishes hung off the open facades ----
+  const endServices = A.beginReviewPart('Facade services', { ownProps: true });
   for (const wnd of info.windows) {
     const pm = wnd.pm;
     if (wnd.f === 0) continue;
@@ -1475,7 +1532,10 @@ function dressBuilding(A, rng, info) {
     }
   }
 
+  endServices();
+
   // ---- balconies get lived in ----
+  const endBalconies = A.beginReviewPart('Balcony dressing');
   for (const bal of info.balconies) {
     const pm = bal.pm;
     const n = rng.int(1, 4);
@@ -1514,21 +1574,23 @@ function dressBuilding(A, rng, info) {
     }
   }
 
+  endBalconies();
+
   // ---- signage over shop and door openings ----
   for (const aw of info.awnings) {
     if (rng.float() < 0.55) {
       const wp = worldOf(aw.pm, aw.x, aw.y + 1.0, -0.16);
-      A.putS('sign_board', wp[0], wp[1], wp[2], ryOf(aw.pm) + Math.PI, Math.min(1.3, aw.w / 1.6), 1, 1, [
+      A.withReviewPart('Signage', () => A.putS('sign_board', wp[0], wp[1], wp[2], ryOf(aw.pm) + Math.PI, Math.min(1.3, aw.w / 1.6), 1, 1, [
         1,
         rng.range(0.8, 1.3),
         1,
-      ]);
+      ]), { ownProps: true });
     }
   }
   for (const dr of info.doors) {
     if (rng.float() < 0.5) {
       const wp = worldOf(dr.pm, dr.x + rng.range(-0.2, 0.2), 2.55, -0.12);
-      A.put('sign_hang', wp[0], wp[1], wp[2], ryOf(dr.pm) + Math.PI, rng.range(0.85, 1.15), [1, 1.2, 1]);
+      A.withReviewPart('Signage', () => A.put('sign_hang', wp[0], wp[1], wp[2], ryOf(dr.pm) + Math.PI, rng.range(0.85, 1.15), [1, 1.2, 1]), { ownProps: true });
     }
     // step, mat, and the junk that lives beside a doorway
     const wp = worldOf(dr.pm, dr.x, 0.02, -0.55);
@@ -1566,12 +1628,12 @@ function dressBuilding(A, rng, info) {
     const pz = rng.range(rz0, rz1);
     const pick = rng.float();
     if (pick < 0.22) {
-      A.put('water_tank', px, roofY, pz, rng.float() * 6.28, rng.range(0.9, 1.15), [1, rng.range(0.9, 1.3), 1]);
+      A.withReviewPart(['Roof', 'Services'], () => A.put('water_tank', px, roofY, pz, rng.float() * 6.28, rng.range(0.9, 1.15), [1, rng.range(0.9, 1.3), 1]), { ownProps: true });
       A.box('metal', px, roofY + 0.55, pz, 1.2, 1.1, 1.2);
     } else if (pick < 0.45) {
-      A.put('sat_dish', px, roofY, pz, rng.float() * 6.28, rng.range(0.85, 1.15), [1, rng.range(0.8, 1.3), 1]);
+      A.withReviewPart(['Roof', 'Services'], () => A.put('sat_dish', px, roofY, pz, rng.float() * 6.28, rng.range(0.85, 1.15), [1, rng.range(0.8, 1.3), 1]), { ownProps: true });
     } else if (pick < 0.6) {
-      A.put('roof_vent', px, roofY, pz, rng.float() * 6.28, 1, [1, 1.2, 1]);
+      A.withReviewPart(['Roof', 'Services'], () => A.put('roof_vent', px, roofY, pz, rng.float() * 6.28, 1, [1, 1.2, 1]), { ownProps: true });
     } else if (pick < 0.78) {
       const n = rng.int(2, 4);
       for (let k = 0; k < n; k++) {
@@ -2042,6 +2104,7 @@ export function buildGate(A, rng) {
 
   // ------------------------------------------------------- the four masses --
   // west gatehouse block: lowest, with an upper loggia of three dark openings
+  const endGatehouses = A.beginReviewPart('Gatehouses and tower');
   block(xL0, xL1, hL, t, z);
   for (let i = 0; i < 3; i++) {
     gateAperture(A, rng, xL0 + 1.0 + i * ((xL1 - xL0 - 2.0) / 2), hL * 0.66, z, 0.9, 1.5, t);
@@ -2071,12 +2134,13 @@ export function buildGate(A, rng) {
   A.add('metal_rust', BOX(A), LL(IDENT, xT1 - 0.5, hT + 1.9, zT, 0, 0.06, 3.4, 0.06, 0.04, 0.07), {
     masks: [0.95, 0.5, 0],
   });
-  A.put('sat_dish', xT0 + 0.9, hT + 0.3, zT + 0.4, 0.7, 1, [1, 1.3, 1]);
+  A.withReviewPart('Attached aerial', () => A.put('sat_dish', xT0 + 0.9, hT + 0.3, zT + 0.4, 0.7, 1, [1, 1.3, 1]), { ownProps: true });
+  endGatehouses();
 
   // sandbag emplacements on the ramparts, and a crate of ammunition
-  sandbagWall(A, rng, xL0 + 1.9, z - 0.15, 0.0, 2.4, 3, hL + 0.16);
-  sandbagWall(A, rng, xR0 + 1.7, zR - 0.15, 0.0, 1.9, 3, hR + 0.16);
-  sandbagWall(A, rng, (xT0 + xT1) / 2, zT - 0.25, 0.0, 2.2, 4, hT + 0.16);
+  sandbagWall(A, rng, xL0 + 1.9, z - 0.15, 0.0, 2.4, 3, hL + 0.16, { id: 'west-rampart', attached: true });
+  sandbagWall(A, rng, xR0 + 1.7, zR - 0.15, 0.0, 1.9, 3, hR + 0.16, { id: 'east-rampart', attached: true });
+  sandbagWall(A, rng, (xT0 + xT1) / 2, zT - 0.25, 0.0, 2.2, 4, hT + 0.16, { id: 'tower-rampart', attached: true });
   A.skirts = false;
   A.put('crate_c', xL1 - 1.2, hL + 0.16, z - 0.6, 0.4, 1, [1, 1.3, 1]);
   A.put('barrel_rust', xR0 + 0.6, hR + 0.16, zR - 0.5, 0.2, 1, [1, 1.4, 1]);
@@ -2085,6 +2149,7 @@ export function buildGate(A, rng) {
   // The spandrel over the arch, built as a wall panel with a pointed hole so
   // the arch has real depth and a reveal.
   const spanH = bodyH - height;
+  const endArch = A.beginReviewPart('Arch and spandrel');
   A.add('plaster_sand', BOX(A), LL(IDENT, 0, height + spanH / 2, z, 0, span + 0.4, spanH, t), {
     masks: [0.45, 0.6, 0.35],
   });
@@ -2120,6 +2185,8 @@ export function buildGate(A, rng) {
    * arch head — the value break that stops the middle of the terminator reading
    * as one flat tone — and its own top surface is in full sun.
    */
+  endArch();
+  const endWalkway = A.beginReviewPart('Rampart walkway');
   const wz = z + t / 2 + 0.38;
   A.add('roof_screed', BOX(A), LL(IDENT, 0, bodyH + 0.11, wz, 0, span + 1.4, 0.22, 0.82), {
     masks: [0.55, 0.35, 0.15],
@@ -2136,7 +2203,8 @@ export function buildGate(A, rng) {
     depth: 0.34,
     set: 0.02,
   });
-  sandbagWall(A, rng, -0.9, z + 0.15, 0.0, 2.0, 3, bodyH + 0.34);
+  endWalkway();
+  sandbagWall(A, rng, -0.9, z + 0.15, 0.0, 2.0, 3, bodyH + 0.34, { id: 'walkway-rampart', attached: true });
 
   // guard hut and checkpoint clutter under the arch
   const hutX = -span / 2 - 1.2;
@@ -2151,8 +2219,8 @@ export function buildGate(A, rng) {
     A.put('jersey', bx, 0, bz, br, 1, [1, rng.range(0.9, 1.3), 1]);
     A.box('concrete', bx, 0.46, bz, 0.62, 0.92, 1.9, br);
   }
-  sandbagWall(A, rng, -1.9, z + 4.6, 0.1, 2.4, 4);
-  sandbagWall(A, rng, 2.1, z - 4.4, 0.0, 2.0, 3);
+  sandbagWall(A, rng, -1.9, z + 4.6, 0.1, 2.4, 4, null, { id: 'gate-front' });
+  sandbagWall(A, rng, 2.1, z - 4.4, 0.0, 2.0, 3, null, { id: 'gate-rear' });
   for (let i = 0; i < 24; i++) {
     const px = rng.range(-outerW / 2, outerW / 2);
     const pz = z + rng.range(-5, 5);

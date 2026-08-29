@@ -902,7 +902,12 @@ export function burntCar(rng) {
  */
 export function registerProps(A, rngIn) {
   const rng = rngIn;
-  const P = (id, key, geo, opts = {}) => A.proto(id, { geo, key, ...opts });
+  const P = (id, key, geo, opts = {}) => A.proto(id, {
+    geo,
+    key,
+    sourceRef: `src/world/props.js#registerProps.${id}`,
+    ...opts,
+  });
   /**
    * Mark a prototype as a LOOSE object: something a person dropped, stacked or
    * kicked, which is therefore never plumb and never exactly the nominal size.
@@ -970,7 +975,13 @@ export function registerProps(A, rngIn) {
    * skirt of its own. maxDist keeps them off the far half of the map, where
    * the contact line is a pixel wide anyway.
    */
-  P('dust_skirt', 'dust_skirt', dustSkirt(rng), { maxDist: 42, castShadow: false });
+  // A contact fillet generated underneath other props, not an independently
+  // authored object in Spatial Review.
+  P('dust_skirt', 'dust_skirt', dustSkirt(rng), {
+    maxDist: 42,
+    castShadow: false,
+    review: false,
+  });
   P('bottle', 'glass', bottle(rng), { maxDist: 55, castShadow: false });
   P('can', 'steel', can(rng), { maxDist: 45, castShadow: false });
 
@@ -989,6 +1000,10 @@ export function registerProps(A, rngIn) {
   // damage
   // 3.2 cm base radius: the callers scale it 0.5-1.5x, so pocks land at 3-10 cm
   // across. At the old 5.5 cm base a single rifle strike was 16 cm wide.
-  P('pock', 'concrete_dark', pockGeometry(rng, 0.032), { maxDist: 65, castShadow: false });
+  P('pock', 'concrete_dark', pockGeometry(rng, 0.032), {
+    maxDist: 65,
+    castShadow: false,
+    review: false,
+  });
   return A;
 }

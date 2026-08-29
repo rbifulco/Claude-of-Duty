@@ -5,12 +5,16 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --port 4173",
-    "shot": "node tools/capture.mjs"
+    "shot": "node tools/capture.mjs",
+    "test:spatial-review": "node --test tests/spatial-review.test.mjs tests/review-assemblies.test.mjs",
+    "test:pages": "node --test tests/pages-build.test.mjs"
   },
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@alterno-dev/spatial-review": "0.4.0",
+    "@alterno-dev/spatial-review-protocol": "0.4.0",
     "three": "^0.180.0"
   },
   "devDependencies": {
