@@ -8,7 +8,7 @@ import { SHOTS } from './dev/shots.js';
 
 // Change when the review catalog's stable actor/asset addressing changes. The
 // editor uses this to avoid replacing a saved scene with an identical handoff.
-const BUILD_ID = `claude-of-duty-assemblies-v6-${import.meta.env?.VITE_GIT_COMMIT || 'development'}`;
+const BUILD_ID = `claude-of-duty-ownership-v7-${import.meta.env?.VITE_GIT_COMMIT || 'development'}`;
 export const SPATIAL_REVIEW_SEED = 0x5eed1234;
 const BRIDGE_OPTIONS = { allowOfficialEditor: true };
 const PROP_CATEGORY_RULES = [
@@ -40,11 +40,24 @@ function propCategory(id) {
 }
 
 function registerWorldComposition(registry, world, mirrors) {
-  const staticObjects = [...(world.A?.reviewStatics ?? [])]
+  const hierarchical = typeof registry.registerAssembly === 'function';
+  const staticObjects = [...(hierarchical ? world.A?.reviewStructures ?? [] : world.A?.reviewStatics ?? [])]
     .sort((left, right) => left.id.localeCompare(right.id));
+  const assemblies = [...(world.A?.reviewAssemblies ?? [])]
+    .sort((left, right) => left.assemblyId.localeCompare(right.assemblyId));
   const propAssets = [...(world.A?.reviewProps ?? [])]
     .sort((left, right) => left.id.localeCompare(right.id));
   let propPlacements = 0;
+
+  if (hierarchical) assemblies.forEach((assembly) => {
+    mirrors.push(assembly.root);
+    registry.registerAssembly({
+      assemblyId: assembly.assemblyId,
+      name: assembly.name,
+      sourceRef: assembly.sourceRef,
+      root: assembly.root,
+    });
+  });
 
   staticObjects.forEach((object, index) => {
       mirrors.push(...object.roots);
@@ -57,13 +70,14 @@ function registerWorldComposition(registry, world, mirrors) {
         tags: [...object.tags, object.attachedParts ? 'assembly' : 'semantic-static'],
         order: 100 + index,
         roots: object.roots,
+        parentAssemblyId: object.parentAssemblyId,
       });
     });
 
   propAssets.forEach((prop, assetIndex) => {
     const propSlug = prop.id.replaceAll('_', '-');
     prop.placements.forEach((placement) => {
-      if (placement.ownerId) return; // already owned by exactly one assembly
+      if (placement.ownerId && !hierarchical) return; // represented inside the legacy composite actor
       const root = new THREE.Mesh(prop.geometry, prop.material);
       // Component identity belongs to the design, not whichever placement is
       // first in the catalog. The actor name below still identifies placement.
@@ -89,16 +103,19 @@ function registerWorldComposition(registry, world, mirrors) {
           placement.scope.id,
         ],
         order: 1000 + assetIndex * 10000 + propPlacements,
+        parentAssemblyId: placement.ownerId ?? undefined,
         root,
       });
     });
   });
 
   return {
+    assemblies: hierarchical ? assemblies.length : 0,
+    hierarchical,
     staticObjects: staticObjects.length,
-    propAssets: propAssets.filter(prop => prop.placements.some(p => !p.ownerId)).length,
+    propAssets: propAssets.filter(prop => prop.placements.some(p => hierarchical || !p.ownerId)).length,
     propPlacements,
-    attachedParts: staticObjects.reduce((sum, object) => sum + object.attachedParts, 0),
+    attachedParts: (world.A?.reviewStatics ?? []).reduce((sum, object) => sum + object.attachedParts, 0),
   };
 }
 
@@ -205,6 +222,10 @@ export function buildEnvironmentReviewTour() {
   };
 }
 
+export function shouldBootClaudeOfDutyPage({ embedded, spatialCapture }) {
+  return !embedded || spatialCapture;
+}
+
 export function attachClaudeOfDutyDiscovery() {
   const websiteUrl = new URL(window.location.href);
   websiteUrl.hash = '';
@@ -226,10 +247,12 @@ export function attachClaudeOfDutyDiscovery() {
   );
 }
 
-export function attachClaudeOfDutyScene(engine) {
+export function attachClaudeOfDutyScene(engine, dependencies = {}) {
   const world = engine.ctx.get('world');
   const ai = engine.ctx.get('ai');
-  const registry = new SceneAssetRegistry(BUILD_ID);
+  const Registry = dependencies.SceneAssetRegistry ?? SceneAssetRegistry;
+  const attachRegistryBridge = dependencies.attachSceneAssetRegistryBridge ?? attachSceneAssetRegistryBridge;
+  const registry = new Registry(BUILD_ID);
   const mirrors = [];
 
   const composition = registerWorldComposition(registry, world, mirrors);
@@ -237,12 +260,13 @@ export function attachClaudeOfDutyScene(engine) {
   registry.registerNavigationSequence(buildEnvironmentReviewTour());
 
   console.info(
-    `[spatial-review] ${registry.size} actors · ${composition.staticObjects} assemblies/context objects · ` +
-      `${composition.attachedParts} attached parts · ${composition.propPlacements} loose prop placements from ${composition.propAssets} shared assets · ` +
+    `[spatial-review] ${registry.size} actors · ${composition.assemblies} transform-only assemblies · ` +
+      `${composition.staticObjects} structure/context placements · ${composition.attachedParts} attached placements · ` +
+      `${composition.propPlacements} ${composition.hierarchical ? 'owned and loose' : 'loose'} prop placements from ${composition.propAssets} shared assets · ` +
       `${enemies} enemies · ${registry.navigationSize} path`
   );
 
-  const detachBridge = attachSceneAssetRegistryBridge(registry, BRIDGE_OPTIONS);
+  const detachBridge = attachRegistryBridge(registry, BRIDGE_OPTIONS);
 
   return {
     registry,

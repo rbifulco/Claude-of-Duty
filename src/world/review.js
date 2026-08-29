@@ -18,6 +18,8 @@ export class ReviewCapture {
     this.ownProps = false;
     this.geometries = new Set();
     this.objects = [];
+    this.structures = [];
+    this.assemblies = [];
   }
 
   setScope(metadata) {
@@ -30,9 +32,10 @@ export class ReviewCapture {
       scope = {
         ...metadata, tags: [...(metadata.tags ?? [])], worldMatrix,
         inverse: worldMatrix.clone().invert(), parts: new Map(), placementCounts: new Map(),
+        assembly: metadata.assembly === true,
       };
       this.scopes.set(scope.id, scope);
-    }
+    } else if (metadata.assembly === true) scope.assembly = true;
     this.scope = scope;
   }
 
@@ -54,7 +57,7 @@ export class ReviewCapture {
 
   beginAssembly(metadata) {
     if (this.scopes.has(metadata.id)) throw new Error(`Duplicate review assembly: ${metadata.id}`);
-    return this.beginScope({ ...metadata, ownProps: true });
+    return this.beginScope({ ...metadata, ownProps: true, assembly: true });
   }
 
   beginScope(metadata) {
@@ -95,6 +98,7 @@ export class ReviewCapture {
     if (scope.reviewProps === false) return null;
     const ordinal = (scope.placementCounts.get(id) ?? 0) + 1;
     scope.placementCounts.set(id, ordinal);
+    if (this.ownProps) scope.assembly = true;
     return {
       matrix, scope, ordinal,
       ownerId: this.ownProps ? scope.id : null,
@@ -137,6 +141,32 @@ export class ReviewCapture {
         }
       }
       scope.parts.clear();
+      // Keep a v6-compatible composite root until an ownership-capable SDK is
+      // published, while the hierarchy uses the geometry-only source root.
+      const legacyRoot = root.clone(true);
+      const legacyGroups = new Map([['[]', legacyRoot]]);
+      for (const [key] of groups) {
+        if (key === '[]') continue;
+        const path = JSON.parse(key);
+        let parent = legacyRoot;
+        for (const name of path) parent = parent.children.find(child => child.name === name);
+        legacyGroups.set(key, parent);
+      }
+      const legacyGroupAt = path => {
+        let parent = legacyRoot;
+        path.forEach((name, i) => {
+          const key = JSON.stringify(path.slice(0, i + 1));
+          let group = legacyGroups.get(key);
+          if (!group) {
+            group = new THREE.Group();
+            group.name = name;
+            parent.add(group);
+            legacyGroups.set(key, group);
+          }
+          parent = group;
+        });
+        return parent;
+      };
       let attachedParts = 0;
       for (const prop of [...prototypes].sort((a, b) => a.id.localeCompare(b.id))) {
         for (const placement of prop.placements) {
@@ -152,17 +182,38 @@ export class ReviewCapture {
           // component references from the assembly sourceRef + component ID.
           mesh.userData.reviewPlacement = placement;
           mesh.userData.reviewPrototype = prop.id;
-          groupAt(placement.componentPath.length ? placement.componentPath : ['Parts']).add(mesh);
+          legacyGroupAt(placement.componentPath.length ? placement.componentPath : ['Parts']).add(mesh);
           attachedParts++;
         }
       }
-      if (root.children.length === 0) continue;
-      root.updateMatrixWorld(true);
-      this.objects.push({
+      legacyRoot.updateMatrixWorld(true);
+      if (legacyRoot.children.length > 0) this.objects.push({
         id: scope.id, assetId: scope.assetId ?? `environment-${scope.id}`,
         name: scope.name, category: scope.category, sourceRef: scope.sourceRef,
-        tags: scope.tags, roots: [root], attachedParts,
+        tags: scope.tags, roots: [legacyRoot], attachedParts,
       });
+      if (scope.assembly) {
+        const pivot = new THREE.Group();
+        pivot.name = scope.name;
+        scope.worldMatrix.decompose(pivot.position, pivot.quaternion, pivot.scale);
+        pivot.updateMatrix();
+        pivot.updateMatrixWorld(true);
+        this.assemblies.push({
+          assemblyId: scope.id, name: scope.name, sourceRef: scope.sourceRef,
+          category: scope.category, tags: scope.tags, root: pivot,
+        });
+      }
+      if (root.children.length > 0) {
+        root.updateMatrixWorld(true);
+        this.structures.push({
+          id: scope.assembly ? `${scope.id}-structure` : scope.id,
+          assetId: scope.assetId ?? `environment-${scope.id}`,
+          name: scope.assembly ? `${scope.name} structure` : scope.name,
+          category: scope.category, sourceRef: scope.sourceRef,
+          tags: scope.assembly ? [...scope.tags, 'assembly-structure'] : scope.tags,
+          roots: [root], parentAssemblyId: scope.assembly ? scope.id : undefined,
+        });
+      }
     }
     return this.objects;
   }
@@ -171,6 +222,8 @@ export class ReviewCapture {
     for (const geometry of this.geometries) geometry.dispose();
     this.geometries.clear();
     this.objects.length = 0;
+    this.structures.length = 0;
+    this.assemblies.length = 0;
     this.scopes.clear();
     this.scope = null;
   }

@@ -18,6 +18,7 @@ import {
   attachClaudeOfDutyDiscovery,
   attachClaudeOfDutyScene,
   buildEnvironmentReviewTour,
+  shouldBootClaudeOfDutyPage,
   SPATIAL_REVIEW_SEED,
 } from '../src/spatial-review.js';
 
@@ -83,6 +84,12 @@ function fakeWindow(href = 'http://127.0.0.1:5174/') {
   };
 }
 const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+
+test('embedded discovery skips game boot while an explicit live capture still boots', () => {
+  assert.equal(shouldBootClaudeOfDutyPage({ embedded: false, spatialCapture: false }), true);
+  assert.equal(shouldBootClaudeOfDutyPage({ embedded: true, spatialCapture: false }), false);
+  assert.equal(shouldBootClaudeOfDutyPage({ embedded: true, spatialCapture: true }), true);
+});
 
 test('discovery preserves the GitHub Pages project path', (t) => {
   const page = fakeWindow('https://rbifulco.github.io/Claude-of-Duty/?q=high#play');

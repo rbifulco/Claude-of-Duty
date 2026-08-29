@@ -454,6 +454,8 @@ export class Assembler {
 
     // Assemble the review graph only after all shared prototype materials exist.
     this.reviewStatics = this.reviewCapture?.finalize(this.reviewProps) ?? [];
+    this.reviewStructures = this.reviewCapture?.structures ?? [];
+    this.reviewAssemblies = this.reviewCapture?.assemblies ?? [];
 
     // --- collision proxies ---
     this.collisionRoot = new THREE.Group();

@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
 import * as THREE from 'three';
 import { Assembler } from '../src/world/builder.js';
 import { attachClaudeOfDutyScene } from '../src/spatial-review.js';
@@ -129,6 +131,58 @@ test('full procedural world: source-owned assemblies and unchanged rendering', a
       if (previous === undefined) delete globalThis.window;
       else globalThis.window = previous;
     }
+  });
+
+  await t.test('accepted SDK exports transform-only owners and independent shared placements', {
+    skip: !process.env.SPATIAL_REVIEW_SDK_PATH,
+  }, async () => {
+    const sdk = await import(pathToFileURL(resolve(
+      process.env.SPATIAL_REVIEW_SDK_PATH,
+      'packages/sdk/dist/index.js',
+    )).href);
+    const bridge = attachClaudeOfDutyScene(
+      { ctx: { get: id => id === 'world' ? world : { agents: [] } } },
+      { SceneAssetRegistry: sdk.SceneAssetRegistry, attachSceneAssetRegistryBridge: () => () => {} },
+    );
+    try {
+      const scene = bridge.registry.toScene();
+      const placementCount = A.reviewProps.reduce((sum, prop) => sum + prop.placements.length, 0);
+      assert.equal(scene.ownership.capability, 'scene-assemblies-v1');
+      assert.equal(scene.ownership.mode, 'hierarchical');
+      assert.equal(scene.assemblies.length, A.reviewAssemblies.length);
+      assert.equal(scene.actors.length, A.reviewStructures.length + placementCount);
+      assert.equal(new Set([
+        ...scene.assemblies.map(item => item.assemblyId),
+        ...scene.actors.map(item => item.actorId),
+      ]).size, scene.assemblies.length + scene.actors.length);
+
+      const building = scene.assemblies.find(item => item.assemblyId === 'building-be1');
+      const structure = scene.actors.find(item => item.actorId === 'building-be1-structure');
+      const fixture = scene.actors.find(item => item.actorId.startsWith('building-be1-ac-unit-'));
+      const sharedFixture = scene.actors.find(item => item.parentAssemblyId !== 'building-be1'
+        && item.assetId === fixture.assetId);
+      assert.ok(building);
+      assert.equal(structure.parentAssemblyId, building.assemblyId);
+      assert.equal(fixture.parentAssemblyId, building.assemblyId);
+      assert.equal(fixture.assetId, 'prop-ac-unit');
+      assert.ok(sharedFixture, 'the same canonical fixture design is placed under another owner');
+      assert.notEqual(sharedFixture.actorId, fixture.actorId);
+      assert.ok(bridge.registry.toAsset(fixture.assetId).nodes.length > 0);
+      assert.ok(A.reviewAssemblies.every(item => item.root.children.length === 0), 'owners contain no geometry');
+
+      const flat = bridge.registry.toScene(false);
+      assert.equal(flat.assemblies, undefined);
+      assert.equal(flat.ownership.mode, 'flattened');
+      assert.equal(flat.actors.length, scene.actors.length);
+      assert.ok(flat.actors.every(item => !item.parentAssemblyId && !item.localTransform));
+
+      const owner = A.reviewAssemblies.find(item => item.assemblyId === 'building-be1').root;
+      owner.visible = false;
+      const hidden = bridge.registry.toScene(false);
+      assert.equal(hidden.actors.some(item => item.actorId === fixture.actorId), false);
+      assert.ok(hidden.actors.some(item => item.actorId === sharedFixture.actorId));
+      owner.visible = true;
+    } finally { bridge.dispose(); }
   });
 });
 

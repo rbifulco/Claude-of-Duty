@@ -19,20 +19,25 @@ R reload, Shift sprint, Ctrl crouch, Space jump, Q/E lean, Esc release.
 
 ## Spatial review
 
-The live Three.js world uses the published Spatial Review SDK **0.4.0**, pinned
+The live Three.js world currently uses the published Spatial Review SDK **0.4.0**, pinned
 with its protocol in `package.json` and `package-lock.json`. Both share the
 game's Three.js 0.180.0 runtime; no sibling checkout is needed. The bridge
 explicitly authorizes the official editor at `https://spatial-review.alterno.dev`
 and loopback editors during local development. Open the game URL in that editor
 to inspect the procedural market scene and the **Environment review tour**.
+The adapter also implements the accepted `scene-assemblies-v1` contract and
+activates it when the installed SDK exposes `registerAssembly`; SDK 0.4.0 keeps
+serving the tested flat v6 fallback until the accepted package release is installed.
 
 Scene composition follows authored ownership without changing the optimized
-render graph. Buildings include their attached services and signage; each palm,
-street lamp, and freestanding sandbag wall is one assembly. The gate owns its
-rampart bags and aerial. Move these together in Scene; inspect named components
-in Asset. Attached components are not also registered as separate actors.
-Loose crates, furniture, and other props remain individual actors sharing their
-canonical prop assets. Ground and broad environment zones remain context actors.
+render graph. Buildings, palms, street lamps, freestanding sandbag walls, and the
+gate are transform-only assemblies. Their structure and attached fixtures are
+independent child placements: move them with their owner in Scene or select one
+fixture without collapsing it into the building asset. Repeated AC units, dishes,
+bags, and other props share their canonical `prop-*` assets across owners. Loose
+crates, furniture, and surroundings remain World-level placements. SDK 0.4.0's
+fallback instead combines owned parts into one composite actor so it never emits
+dangling parent references.
 Stochastic street/ground micro-scatter, bullet pocks, and generated contact
 fillets stay below the review scale. Each live enemy remains separate.
 
@@ -56,10 +61,11 @@ the editor. Normal play remains randomized and animated. Compatible editors
 automatically negotiate 0.4.0's progressive asset and transferable-geometry
 capabilities; older editors retain the full-catalog fallback.
 
-Build identity is `assemblies-v6` plus `VITE_GIT_COMMIT` (or a clearly labeled
-`development` fallback). Start a new review baseline when migrating from v5:
-attached actor IDs now resolve to assembly components, and building bounds,
-frames and component IDs have changed. Retain old feedback separately and map
+Build identity is `ownership-v7` plus `VITE_GIT_COMMIT` (or a clearly labeled
+`development` fallback). Start a new review baseline when migrating from v6:
+former composite actor IDs become transform-only owners, structure placements
+gain `-structure`, and attached fixtures regain stable placement identities under
+their owners. Retain old feedback separately and map
 it intentionally; do not blindly replay it. See [integration notes](docs/spatial-review.md)
 for ownership, source mapping, exclusions, and verification limitations.
 
