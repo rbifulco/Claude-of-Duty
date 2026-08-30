@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import * as THREE from 'three';
 import {
@@ -99,6 +100,10 @@ test('discovery preserves the GitHub Pages project path', (t) => {
   page.send({ type: SPATIAL_REVIEW_DISCOVERY_REQUEST, requestId: 'pages-discovery' });
   const discovery = page.messages[0].value.discovery;
   assert.equal(discovery.websiteUrl, 'https://rbifulco.github.io/Claude-of-Duty/');
+  assert.ok([
+    'https://rbifulco.github.io/.well-known/spatial-review.json',
+    'https://rbifulco.github.io/Claude-of-Duty/.well-known/spatial-review.json',
+  ].includes(page.messages[0].value.discoveryUrl));
   const capture = new URL(discovery.liveCapture);
   assert.equal(capture.origin, 'https://rbifulco.github.io');
   assert.equal(capture.pathname, '/Claude-of-Duty/');
@@ -147,6 +152,16 @@ test('adapter preserves separate actors, canonical asset IDs and progressive des
   const compact = review.registry.toAsset('prop-sat-dish', 'review', true);
   assert.ok(ArrayBuffer.isView(compact.geometries[0].geometry.positions));
   assert.ok(compact.nodes.some(node => node.name === 'sat_dish'));
+});
+
+test('static project-relative discovery advertises the bounded frozen capture', async () => {
+  const document = JSON.parse(await readFile(
+    new URL('../public/.well-known/spatial-review.json', import.meta.url),
+    'utf8',
+  ));
+  assert.equal(document.schema, 'spatial-review-discovery/v1');
+  assert.equal(document.websiteUrl, '../');
+  assert.equal(document.liveCapture, '../?spatial-review-capture=1&prewarm=0');
 });
 
 test('canonical component IDs do not depend on the first placement scope', (t) => {

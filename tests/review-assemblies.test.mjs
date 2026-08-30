@@ -141,13 +141,21 @@ test('full procedural world: source-owned assemblies and unchanged rendering', a
         'packages/sdk/dist/index.js',
       )).href)
       : await import('@alterno-dev/spatial-review');
+    const sdkThree = process.env.SPATIAL_REVIEW_SDK_PATH
+      ? await import(pathToFileURL(resolve(
+        process.env.SPATIAL_REVIEW_SDK_PATH,
+        'node_modules/three/build/three.module.js',
+      )).href)
+      : THREE;
     const bridge = attachClaudeOfDutyScene(
       { ctx: { get: id => id === 'world' ? world : { agents: [] } } },
-      { SceneAssetRegistry: sdk.SceneAssetRegistry, attachSceneAssetRegistryBridge: () => () => {} },
+      { SceneAssetRegistry: sdk.SceneAssetRegistry, attachSceneAssetRegistryBridge: () => () => {}, THREE: sdkThree },
     );
     try {
-      const scene = bridge.registry.toScene();
+      const deferred = typeof bridge.registry.registerDeferred === 'function';
+      const scene = bridge.registry.toScene(true, deferred);
       const placementCount = A.reviewProps.reduce((sum, prop) => sum + prop.placements.length, 0);
+      assert.equal(bridge.composition.deferredPropPlacements, deferred ? placementCount : 0);
       assert.equal(scene.ownership.capability, 'scene-assemblies-v1');
       assert.equal(scene.ownership.mode, 'hierarchical');
       assert.equal(scene.assemblies.length, A.reviewAssemblies.length);
@@ -168,10 +176,24 @@ test('full procedural world: source-owned assemblies and unchanged rendering', a
       assert.equal(fixture.assetId, 'prop-ac-unit');
       assert.ok(sharedFixture, 'the same canonical fixture design is placed under another owner');
       assert.notEqual(sharedFixture.actorId, fixture.actorId);
-      assert.ok(bridge.registry.toAsset(fixture.assetId).nodes.length > 0);
+      if (deferred) {
+        const descriptor = bridge.registry.getAssetStreamDescriptor(fixture.assetId, 'review');
+        const representation = descriptor.representations.find(item => item.purpose === 'detail');
+        const produced = await bridge.registry.produceAssetRepresentation(
+          fixture.assetId,
+          'review',
+          representation.id,
+          representation.estimatedBytes,
+          'interactive',
+          new AbortController().signal,
+        );
+        assert.ok(produced.asset.nodes.length > 0);
+      } else {
+        assert.ok(bridge.registry.toAsset(fixture.assetId).nodes.length > 0);
+      }
       assert.ok(A.reviewAssemblies.every(item => item.root.children.length === 0), 'owners contain no geometry');
 
-      const flat = bridge.registry.toScene(false);
+      const flat = bridge.registry.toScene(false, deferred);
       assert.equal(flat.assemblies, undefined);
       assert.equal(flat.ownership.mode, 'flattened');
       assert.equal(flat.actors.length, scene.actors.length);
@@ -179,7 +201,7 @@ test('full procedural world: source-owned assemblies and unchanged rendering', a
 
       const owner = A.reviewAssemblies.find(item => item.assemblyId === 'building-be1').root;
       owner.visible = false;
-      const hidden = bridge.registry.toScene(false);
+      const hidden = bridge.registry.toScene(false, deferred);
       assert.equal(hidden.actors.some(item => item.actorId === fixture.actorId), false);
       assert.ok(hidden.actors.some(item => item.actorId === sharedFixture.actorId));
       owner.visible = true;

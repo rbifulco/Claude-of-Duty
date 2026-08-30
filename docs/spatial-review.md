@@ -14,7 +14,8 @@ registered data categories, or framing permissions have been added.
 | Assets | Preserve placement-specific procedural structure assets. Every repeated prop, attached or loose, references its canonical `prop-*` prototype asset. |
 | Navigation | Keep the five-view review tour sourced from `SHOTS` in `src/dev/shots.js`. Linear transitions are a review-only approximation, not a gameplay route. |
 | Capture | Use the existing RNG with fixed seed `0x5eed1234`, six boot-pose enemies, one hero-view render, and no running simulation or frame-stat polling. Hide the unposed first-person rig in this snapshot only. Ordinary gameplay remains unchanged. |
-| Lifecycle | Discovery starts on the ordinary entry page; an unflagged editor iframe serves only that lightweight bridge so cold game boot cannot starve the handshake. The scene bridge starts after construction in top-level play or the explicitly flagged live-capture iframe. Both detach on HMR. Refresh rebuilds the snapshot; SDK 0.5.0 negotiates ownership, progressive assets, and transferable geometry independently. |
+| Performance | Publish project-relative discovery, keep the frozen one-frame capture, and bound geometry to one 64 MiB request with a 32-request queue. With `asset-stream-v1`, publish all prop transforms/bounds immediately and construct the 3,206 review-only placement mirrors only when their shared asset is requested. |
+| Lifecycle | Discovery starts on the ordinary entry page; an unflagged editor iframe serves only that lightweight bridge so cold game boot cannot starve the handshake. The scene bridge starts after construction in top-level play or the explicitly flagged live-capture iframe. Both detach on HMR. Refresh rebuilds the snapshot; SDK 0.5.0 keeps the eager progressive fallback, while an injected/released asset-stream-capable SDK adds deferred representations, status, cancellation, typed instances, and bounded streaming. |
 
 The installed 0.5.0 SDK supports cached transforms/bounds, ref-counted runtime
 resources, negotiated progressive/transferable geometry, and transform-only
@@ -24,6 +25,20 @@ adapter retains `registerAssembly` feature detection so an explicitly installed
 0.4.0 SDK still receives the existing composite flat graph. This upgrade does
 not deploy or modify the editor itself. The ownership refinement follows
 [Structuring for review](https://github.com/rbifulco/alterno-spatial-review/blob/main/agents/structuring-for-review.md).
+
+The bridge also advertises `.well-known/spatial-review.json` under the GitHub
+Pages project path. New clients resolve that project-relative locator without
+probing only the origin root; the browser bridge remains the fallback. Streaming
+limits are intentionally conservative because the editor can keep multiple
+source frames alive: one active 64 MiB family, a 64 MiB aggregate reservation,
+and 32 queued requests per frame.
+
+When the sibling/future SDK exposes `registerDeferred`, repeated prop placements
+register accurate world transforms and geometry-derived bounds without retaining
+one `THREE.Mesh` mirror per actor. The canonical prop factory is materialized only
+for a requested overview/detail family, reports bounded progress, and honors
+cancellation. The existing eager path remains active with published SDK 0.5.0,
+so current deployments and older editors keep their complete/progressive fallback.
 
 ## Assembly ownership
 
@@ -145,7 +160,10 @@ shared child placements, flat fallback; world-space paint in assembly-local
 geometry; shared resource disposal and scope restoration. It also covers
 separate actor/shared asset identity, progressive descriptors
 and typed geometry, cache refresh, bridge origin/window-source restrictions,
-transfer-buffer ownership, cleanup, and camera/aim source mappings.
+transfer-buffer ownership, project-relative discovery, cleanup, and camera/aim
+source mappings. With `SPATIAL_REVIEW_SDK_PATH`, it additionally verifies that
+all prop actors remain present in streamed catalogs, mirrors are deferred, and a
+requested canonical detail representation is generated on demand.
 
 `npm run build` verifies the production bundle. `npm ls` must show registry
 packages (not local links) and a single Three.js 0.180.0 runtime. The installed

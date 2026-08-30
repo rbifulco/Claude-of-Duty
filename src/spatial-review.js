@@ -10,7 +10,16 @@ import { SHOTS } from './dev/shots.js';
 // editor uses this to avoid replacing a saved scene with an identical handoff.
 const BUILD_ID = `claude-of-duty-ownership-v7-${import.meta.env?.VITE_GIT_COMMIT || 'development'}`;
 export const SPATIAL_REVIEW_SEED = 0x5eed1234;
-const BRIDGE_OPTIONS = { allowOfficialEditor: true };
+const AUTHORIZATION_OPTIONS = { allowOfficialEditor: true };
+const STREAMING_BRIDGE_OPTIONS = {
+  ...AUTHORIZATION_OPTIONS,
+  maxGeometryBytes: 64 * 1024 * 1024,
+  maxConcurrentAssetRequests: 1,
+  maxInFlightBytes: 64 * 1024 * 1024,
+  maxQueuedAssetRequests: 32,
+  progressIntervalMs: 120,
+};
+const ASSET_STREAM_CAPABILITY = 'asset-stream-v1';
 const PROP_CATEGORY_RULES = [
   [/^(palm_|shrub$|weeds$|planter$)/, 'Props / Vegetation'],
   [/^(brick_|rock_|slab_|rebar$|plank_|litter$|pock$|dust_skirt$)/, 'Props / Debris'],
@@ -39,7 +48,97 @@ function propCategory(id) {
   return PROP_CATEGORY_RULES.find(([pattern]) => pattern.test(id))?.[1] ?? 'Props / Objects';
 }
 
-function registerWorldComposition(registry, world, mirrors) {
+function transformFromMatrix(matrix) {
+  const position = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  const scale = new THREE.Vector3();
+  matrix.decompose(position, quaternion, scale);
+  const rotation = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
+  return {
+    position: position.toArray(),
+    rotation: [rotation.x, rotation.y, rotation.z].map(THREE.MathUtils.radToDeg),
+    scale: scale.toArray(),
+  };
+}
+
+function propBounds(geometry, matrix) {
+  if (!geometry.boundingBox) geometry.computeBoundingBox();
+  const box = geometry.boundingBox.clone().applyMatrix4(matrix);
+  return {
+    center: box.getCenter(new THREE.Vector3()).toArray(),
+    size: box.getSize(new THREE.Vector3()).toArray(),
+  };
+}
+
+function geometryBytes(geometry, attributes) {
+  let bytes = geometry.index?.array.byteLength ?? 0;
+  for (const name of attributes) bytes += geometry.getAttribute(name)?.array.byteLength ?? 0;
+  return bytes;
+}
+
+function createPropMirror(prop, placement, world, ThreeRuntime = THREE) {
+  const root = new ThreeRuntime.Mesh(prop.geometry, prop.material);
+  // Component identity belongs to the design, not whichever placement is
+  // first in the catalog. The actor name still identifies placement.
+  root.name = prop.id;
+  root.matrixAutoUpdate = false;
+  root.matrix.copy(placement.matrix);
+  root.userData.surface = world.A.surfaceOf(prop.key);
+  root.userData.reviewOnly = true;
+  root.updateMatrixWorld(true);
+  return root;
+}
+
+function registerDeferredProp(registry, prop, placement, registration, world, ThreeRuntime) {
+  if (typeof registry.registerDeferred !== 'function') return false;
+  const indexCount = prop.geometry.index?.count ?? prop.geometry.getAttribute('position')?.count ?? 0;
+  const triangles = Math.floor(indexCount / 3);
+  const overviewBytes = geometryBytes(prop.geometry, ['position']);
+  const detailAttributes = ['position', 'normal', 'uv']
+    .filter(name => Boolean(prop.geometry.getAttribute(name)));
+  const detailBytes = geometryBytes(prop.geometry, detailAttributes);
+  const revision = `${BUILD_ID}-${registration.assetId}`;
+  registry.registerDeferred({
+    ...registration,
+    transform: transformFromMatrix(placement.matrix),
+    bounds: propBounds(prop.geometry, placement.matrix),
+    stream: {
+      capability: ASSET_STREAM_CAPABILITY,
+      revision,
+      representations: [
+        {
+          id: 'overview',
+          purpose: 'overview',
+          revision: `${revision}-overview`,
+          estimatedBytes: overviewBytes,
+          triangles,
+          attributes: ['position'],
+          geometricError: 0,
+        },
+        {
+          id: 'detail',
+          purpose: 'detail',
+          revision: `${revision}-detail`,
+          estimatedBytes: detailBytes,
+          triangles,
+          attributes: detailAttributes,
+          geometricError: 0,
+        },
+      ],
+    },
+    produceRepresentation({ signal, reportProgress }) {
+      if (signal.aborted) throw new DOMException('Prop request cancelled.', 'AbortError');
+      reportProgress({ phase: 'generating', completed: 0, total: 1 });
+      const root = createPropMirror(prop, placement, world, ThreeRuntime);
+      if (signal.aborted) throw new DOMException('Prop request cancelled.', 'AbortError');
+      reportProgress({ phase: 'generating', completed: 1, total: 1 });
+      return root;
+    },
+  });
+  return true;
+}
+
+function registerWorldComposition(registry, world, mirrors, ThreeRuntime = THREE) {
   const hierarchical = typeof registry.registerAssembly === 'function';
   const staticObjects = [...(hierarchical ? world.A?.reviewStructures ?? [] : world.A?.reviewStatics ?? [])]
     .sort((left, right) => left.id.localeCompare(right.id));
@@ -48,6 +147,7 @@ function registerWorldComposition(registry, world, mirrors) {
   const propAssets = [...(world.A?.reviewProps ?? [])]
     .sort((left, right) => left.id.localeCompare(right.id));
   let propPlacements = 0;
+  let deferredPropPlacements = 0;
 
   if (hierarchical) assemblies.forEach((assembly) => {
     mirrors.push(assembly.root);
@@ -78,18 +178,8 @@ function registerWorldComposition(registry, world, mirrors) {
     const propSlug = prop.id.replaceAll('_', '-');
     prop.placements.forEach((placement) => {
       if (placement.ownerId && !hierarchical) return; // represented inside the legacy composite actor
-      const root = new THREE.Mesh(prop.geometry, prop.material);
-      // Component identity belongs to the design, not whichever placement is
-      // first in the catalog. The actor name below still identifies placement.
-      root.name = prop.id;
-      root.matrixAutoUpdate = false;
-      root.matrix.copy(placement.matrix);
-      root.userData.surface = world.A.surfaceOf(prop.key);
-      root.userData.reviewOnly = true;
-      root.updateMatrixWorld(true);
-      mirrors.push(root);
       propPlacements++;
-      registry.register({
+      const registration = {
         actorId: `${placement.scope.id}-${propSlug}-${placement.ordinal}`,
         assetId: `prop-${propSlug}`,
         name: `${title(prop.id)} · ${placement.scope.name} · ${placement.ordinal}`,
@@ -104,8 +194,14 @@ function registerWorldComposition(registry, world, mirrors) {
         ],
         order: 1000 + assetIndex * 10000 + propPlacements,
         parentAssemblyId: placement.ownerId ?? undefined,
-        root,
-      });
+      };
+      if (registerDeferredProp(registry, prop, placement, registration, world, ThreeRuntime)) {
+        deferredPropPlacements++;
+      } else {
+        const root = createPropMirror(prop, placement, world, ThreeRuntime);
+        mirrors.push(root);
+        registry.register({ ...registration, root });
+      }
     });
   });
 
@@ -115,6 +211,7 @@ function registerWorldComposition(registry, world, mirrors) {
     staticObjects: staticObjects.length,
     propAssets: propAssets.filter(prop => prop.placements.some(p => hierarchical || !p.ownerId)).length,
     propPlacements,
+    deferredPropPlacements,
     attachedParts: (world.A?.reviewStatics ?? []).reduce((sum, object) => sum + object.attachedParts, 0),
   };
 }
@@ -241,9 +338,10 @@ export function attachClaudeOfDutyDiscovery() {
     {
       name: 'Claude of Duty',
       websiteUrl: websiteUrl.href,
+      discoveryUrl: '.well-known/spatial-review.json',
       liveCapture: liveCapture.href,
     },
-    BRIDGE_OPTIONS,
+    AUTHORIZATION_OPTIONS,
   );
 }
 
@@ -252,12 +350,21 @@ export function attachClaudeOfDutyScene(engine, dependencies = {}) {
   const ai = engine.ctx.get('ai');
   const Registry = dependencies.SceneAssetRegistry ?? SceneAssetRegistry;
   const attachRegistryBridge = dependencies.attachSceneAssetRegistryBridge ?? attachSceneAssetRegistryBridge;
+  const ThreeRuntime = dependencies.THREE ?? THREE;
   const registry = new Registry(BUILD_ID);
   const mirrors = [];
 
-  const composition = registerWorldComposition(registry, world, mirrors);
+  const composition = registerWorldComposition(registry, world, mirrors, ThreeRuntime);
   const enemies = registerAiComposition(registry, ai);
   registry.registerNavigationSequence(buildEnvironmentReviewTour());
+  registry.setSourceStatus?.({
+    phase: 'catalog-ready',
+    expectedActors: registry.size,
+    readyActors: registry.size - composition.deferredPropPlacements,
+    message: composition.deferredPropPlacements
+      ? `${composition.deferredPropPlacements} prop placements will be materialized on request.`
+      : 'Review geometry is registered and request-driven.',
+  });
 
   console.info(
     `[spatial-review] ${registry.size} actors · ${composition.assemblies} transform-only assemblies · ` +
@@ -266,7 +373,7 @@ export function attachClaudeOfDutyScene(engine, dependencies = {}) {
       `${enemies} enemies · ${registry.navigationSize} path`
   );
 
-  const detachBridge = attachRegistryBridge(registry, BRIDGE_OPTIONS);
+  const detachBridge = attachRegistryBridge(registry, STREAMING_BRIDGE_OPTIONS);
 
   return {
     registry,

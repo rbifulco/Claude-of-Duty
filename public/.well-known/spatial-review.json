@@ -1,0 +1,7 @@
+{
+  "schema": "spatial-review-discovery/v1",
+  "version": 1,
+  "name": "Claude of Duty",
+  "websiteUrl": "../",
+  "liveCapture": "../?spatial-review-capture=1&prewarm=0"
+}
