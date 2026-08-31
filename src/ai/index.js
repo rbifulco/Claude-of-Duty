@@ -53,14 +53,19 @@ export class AiSystem {
   async init(ctx) {
     this.ctx = ctx;
     this.rng = ctx.rng.fork();
+    this.spatialReviewCapture = new URLSearchParams(window.location.search)
+      .get('spatial-review-capture') === '1';
     this.root = new THREE.Group();
     this.root.name = 'ai';
     ctx.scene.add(this.root);
 
     const t0 = performance.now();
     this.materials = new SoldierMaterials(this.rng.fork(), {
-      size: 512,
-      anisotropy: ctx.config.q.anisotropy ?? 8,
+      // Spatial Review serializes material parameters, not the custom baked
+      // camouflage textures. A small deterministic bake preserves material
+      // identity while avoiding several seconds of invisible texture work.
+      size: this.spatialReviewCapture ? 64 : 512,
+      anisotropy: this.spatialReviewCapture ? 1 : (ctx.config.q.anisotropy ?? 8),
       camo: ['arid', 'woodland', 'urban'],
     });
     // Contact occlusion under every actor. Without it the cast shadow alone
@@ -151,7 +156,7 @@ export class AiSystem {
     // unchanged. `update()` keeps the same code as a fallback for the case where
     // the collision world is not registered yet.
     this._bootNav(ctx);
-    await this.prewarmMaterials();
+    if (!this.spatialReviewCapture) await this.prewarmMaterials();
   }
 
   /**

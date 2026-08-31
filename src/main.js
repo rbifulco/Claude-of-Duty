@@ -51,18 +51,25 @@ if (shouldBootClaudeOfDutyPage({ embedded: window.parent !== window, spatialCapt
   if (spatialCapture) engine.rng.seed(SPATIAL_REVIEW_SEED);
 
   // Registration order is irrelevant — Registry topo-sorts on static deps.
+  // Spatial Review needs the authored environment and boot-pose enemies, but
+  // not the player, weapons, combat FX, HUD, or audio. Keeping those systems
+  // out of the hidden resource frame removes several seconds of unrelated
+  // procedural work without changing ordinary gameplay.
   engine
     .add(RenderSystem)
     .add(MaterialSystem)
-    .add(SkySystem)
     .add(WorldSystem)
     .add(PhysicsSystem)
-    .add(PlayerSystem)
-    .add(WeaponSystem)
-    .add(FxSystem)
-    .add(AiSystem)
-    .add(UiSystem)
-    .add(AudioSystem);
+    .add(AiSystem);
+  if (!spatialCapture) {
+    engine
+      .add(SkySystem)
+      .add(PlayerSystem)
+      .add(WeaponSystem)
+      .add(FxSystem)
+      .add(UiSystem)
+      .add(AudioSystem);
+  }
 
   try {
     await engine.init();
@@ -107,7 +114,8 @@ if (shouldBootClaudeOfDutyPage({ embedded: window.parent !== window, spatialCapt
 
   if (!spatialCapture) engine.start();
 
-  // Capture harness handshake: only flag ready once a frame has actually landed.
+  // Screenshot/lockstep captures flag ready after a frame lands. The Spatial
+  // Review resource frame has no pixel output, so it flags the catalog directly.
   //
   // BOOT_FRAMES is deliberately a frame COUNT, not a rAF race. In lockstep mode the
   // engine has no loop of its own, so we hand-pump exactly this many frames and only
@@ -125,9 +133,9 @@ if (shouldBootClaudeOfDutyPage({ embedded: window.parent !== window, spatialCapt
     engine.camera.lookAt(...SHOTS.hero.look);
     engine.camera.fov = SHOTS.hero.fov;
     engine.camera.updateProjectionMatrix();
-    // The unregistered first-person rig also has not been posed by its update.
-    engine.ctx.get('weapons').viewmodel.anchor.visible = false;
-    engine.ctx.get('render').render(engine.ctx);
+    // The resource iframe does not present gameplay pixels. Rendering here
+    // would synchronously compile the full shader graph before the editor can
+    // request its metadata-only catalog.
     window.__READY__ = true;
   } else if (lockstep) {
     await shotApi.pump(BOOT_FRAMES);

@@ -15,8 +15,8 @@ const AUTHORIZATION_OPTIONS = { allowOfficialEditor: true };
 const STREAMING_BRIDGE_OPTIONS = {
   ...AUTHORIZATION_OPTIONS,
   maxGeometryBytes: 64 * 1024 * 1024,
-  maxConcurrentAssetRequests: 1,
-  maxInFlightBytes: 64 * 1024 * 1024,
+  maxConcurrentAssetRequests: 2,
+  maxInFlightBytes: 128 * 1024 * 1024,
   maxQueuedAssetRequests: 32,
   progressIntervalMs: 120,
 };
@@ -81,11 +81,107 @@ function streamEstimate(geometryBytes) {
   return Math.min(1024 * 1024 * 1024, geometryBytes + STREAM_METADATA_HEADROOM);
 }
 
+function rootsGeometryStats(roots, attributes) {
+  const geometries = new Set();
+  let bytes = 0;
+  let triangles = 0;
+  roots.forEach((root) => root.traverse((object) => {
+    const geometry = object.geometry;
+    if (!geometry?.getAttribute?.('position') || geometries.has(geometry)) return;
+    geometries.add(geometry);
+    bytes += geometryBytes(geometry, attributes);
+    const indexCount = geometry.index?.count ?? geometry.getAttribute('position').count;
+    triangles += Math.floor(indexCount / 3);
+  }));
+  return { bytes, triangles };
+}
+
+function rootsBounds(roots, ThreeRuntime) {
+  roots.forEach((root) => root.updateWorldMatrix(true, true));
+  const box = new ThreeRuntime.Box3();
+  roots.forEach((root) => box.expandByObject(root, true));
+  if (box.isEmpty()) {
+    const center = new ThreeRuntime.Vector3().setFromMatrixPosition(roots[0].matrixWorld);
+    return { center: center.toArray(), size: [0, 0, 0] };
+  }
+  return {
+    center: box.getCenter(new ThreeRuntime.Vector3()).toArray(),
+    size: box.getSize(new ThreeRuntime.Vector3()).toArray(),
+  };
+}
+
 function overviewGeometry(source, ThreeRuntime) {
   const geometry = new ThreeRuntime.BufferGeometry();
   geometry.setAttribute('position', source.getAttribute('position'));
   if (source.index) geometry.setIndex(source.index);
   return geometry;
+}
+
+function overviewRoots(roots, ThreeRuntime) {
+  return roots.map((source) => {
+    const root = source.clone(true);
+    root.traverse((object) => {
+      if (object.geometry?.getAttribute?.('position')) {
+        object.geometry = overviewGeometry(object.geometry, ThreeRuntime);
+      }
+    });
+    return root;
+  });
+}
+
+function registerDeferredRoots(registry, roots, registration, ThreeRuntime) {
+  if (typeof registry.registerDeferred !== 'function'
+    || !roots.every((root) => root instanceof ThreeRuntime.Object3D)) return false;
+
+  const overview = rootsGeometryStats(roots, ['position']);
+  const detailAttributes = ['position', 'normal', 'uv'].filter((attribute) => roots.some((root) => {
+    let found = false;
+    root.traverse((object) => { if (object.geometry?.getAttribute?.(attribute)) found = true; });
+    return found;
+  }));
+  const detail = rootsGeometryStats(roots, detailAttributes);
+  const revision = `${BUILD_ID}-${registration.assetId}`;
+  roots.forEach((root) => root.updateWorldMatrix(true, true));
+  registry.registerDeferred({
+    ...registration,
+    transform: transformFromMatrix(roots[0].matrixWorld),
+    bounds: rootsBounds(roots, ThreeRuntime),
+    stream: {
+      capability: SPATIAL_REVIEW_ASSET_STREAM_CAPABILITY,
+      revision,
+      representations: [
+        {
+          id: 'overview',
+          purpose: 'overview',
+          revision: `${revision}-overview`,
+          estimatedBytes: streamEstimate(overview.bytes),
+          triangles: overview.triangles,
+          attributes: ['position'],
+          geometricError: 0,
+        },
+        {
+          id: 'detail',
+          purpose: 'detail',
+          revision: `${revision}-detail`,
+          estimatedBytes: streamEstimate(detail.bytes),
+          triangles: detail.triangles,
+          attributes: detailAttributes,
+          geometricError: 0,
+        },
+      ],
+    },
+    produceRepresentation({ representation, signal, reportProgress }) {
+      if (signal.aborted) throw new DOMException('Asset request cancelled.', 'AbortError');
+      reportProgress({ phase: 'generating', completed: 0, total: 1 });
+      const value = representation.purpose === 'overview'
+        ? overviewRoots(roots, ThreeRuntime)
+        : roots;
+      if (signal.aborted) throw new DOMException('Asset request cancelled.', 'AbortError');
+      reportProgress({ phase: 'generating', completed: 1, total: 1 });
+      return value;
+    },
+  });
+  return true;
 }
 
 function createPropMirror(prop, placement, world, ThreeRuntime = THREE, purpose = 'detail') {
@@ -161,6 +257,7 @@ function registerWorldComposition(registry, world, mirrors, ThreeRuntime = THREE
     .sort((left, right) => left.id.localeCompare(right.id));
   let propPlacements = 0;
   let deferredPropPlacements = 0;
+  let deferredStaticObjects = 0;
 
   if (hierarchical) assemblies.forEach((assembly) => {
     mirrors.push(assembly.root);
@@ -173,19 +270,23 @@ function registerWorldComposition(registry, world, mirrors, ThreeRuntime = THREE
   });
 
   staticObjects.forEach((object, index) => {
-      mirrors.push(...object.roots);
-      registry.register({
-        actorId: object.id,
-        assetId: object.assetId,
-        name: object.name,
-        category: object.category,
-        sourceRef: object.sourceRef,
-        tags: [...object.tags, object.attachedParts ? 'assembly' : 'semantic-static'],
-        order: 100 + index,
-        roots: object.roots,
-        parentAssemblyId: object.parentAssemblyId,
-      });
-    });
+    mirrors.push(...object.roots);
+    const registration = {
+      actorId: object.id,
+      assetId: object.assetId,
+      name: object.name,
+      category: object.category,
+      sourceRef: object.sourceRef,
+      tags: [...object.tags, object.attachedParts ? 'assembly' : 'semantic-static'],
+      order: 100 + index,
+      parentAssemblyId: object.parentAssemblyId,
+    };
+    if (registerDeferredRoots(registry, object.roots, registration, ThreeRuntime)) {
+      deferredStaticObjects++;
+    } else {
+      registry.register({ ...registration, roots: object.roots });
+    }
+  });
 
   propAssets.forEach((prop, assetIndex) => {
     const propSlug = prop.id.replaceAll('_', '-');
@@ -225,17 +326,19 @@ function registerWorldComposition(registry, world, mirrors, ThreeRuntime = THREE
     propAssets: propAssets.filter(prop => prop.placements.some(p => hierarchical || !p.ownerId)).length,
     propPlacements,
     deferredPropPlacements,
+    deferredStaticObjects,
     attachedParts: (world.A?.reviewStatics ?? []).reduce((sum, object) => sum + object.attachedParts, 0),
   };
 }
 
-function registerAiComposition(registry, ai) {
+function registerAiComposition(registry, ai, ThreeRuntime = THREE) {
   const variantCounts = new Map();
+  let deferredEnemies = 0;
   ai.agents.forEach((agent, index) => {
     const variant = agent.variantName ?? 'enemy';
     const number = (variantCounts.get(variant) ?? 0) + 1;
     variantCounts.set(variant, number);
-    registry.register({
+    const registration = {
       actorId: `enemy-${variant}-${number}`,
       assetId: `enemy-${variant}`,
       name: `${title(variant)} enemy ${number}`,
@@ -243,10 +346,14 @@ function registerAiComposition(registry, ai) {
       sourceRef: 'src/ai/index.js#AiSystem.populate',
       tags: ['actor', 'enemy', variant],
       order: 2000 + index,
-      root: agent.group,
-    });
+    };
+    if (registerDeferredRoots(registry, [agent.group], registration, ThreeRuntime)) {
+      deferredEnemies++;
+    } else {
+      registry.register({ ...registration, root: agent.group });
+    }
   });
-  return ai.agents.length;
+  return { count: ai.agents.length, deferred: deferredEnemies };
 }
 
 /**
@@ -368,14 +475,17 @@ export function attachClaudeOfDutyScene(engine, dependencies = {}) {
   const mirrors = [];
 
   const composition = registerWorldComposition(registry, world, mirrors, ThreeRuntime);
-  const enemies = registerAiComposition(registry, ai);
+  const enemies = registerAiComposition(registry, ai, ThreeRuntime);
   registry.registerNavigationSequence(buildEnvironmentReviewTour());
+  const deferredActors = composition.deferredPropPlacements
+    + composition.deferredStaticObjects
+    + enemies.deferred;
   registry.setSourceStatus?.({
     phase: 'catalog-ready',
     expectedActors: registry.size,
-    readyActors: registry.size - composition.deferredPropPlacements,
-    message: composition.deferredPropPlacements
-      ? `${composition.deferredPropPlacements} prop placements will be materialized on request.`
+    readyActors: registry.size - deferredActors,
+    message: deferredActors
+      ? `${deferredActors} scene placements will be materialized on request.`
       : 'Review geometry is registered and request-driven.',
   });
 
@@ -383,14 +493,14 @@ export function attachClaudeOfDutyScene(engine, dependencies = {}) {
     `[spatial-review] ${registry.size} actors · ${composition.assemblies} transform-only assemblies · ` +
       `${composition.staticObjects} structure/context placements · ${composition.attachedParts} attached placements · ` +
       `${composition.propPlacements} ${composition.hierarchical ? 'owned and loose' : 'loose'} prop placements from ${composition.propAssets} shared assets · ` +
-      `${enemies} enemies · ${registry.navigationSize} path`
+      `${enemies.count} enemies · ${registry.navigationSize} path`
   );
 
   const detachBridge = attachRegistryBridge(registry, STREAMING_BRIDGE_OPTIONS);
 
   return {
     registry,
-    composition: { ...composition, enemies },
+    composition: { ...composition, enemies: enemies.count, deferredEnemies: enemies.deferred },
     dispose() {
       detachBridge();
       mirrors.length = 0;

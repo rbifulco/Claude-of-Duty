@@ -25,7 +25,7 @@ import {
   SPATIAL_REVIEW_SEED,
 } from '../src/spatial-review.js';
 
-function fixture(reviewEnabled = true, scopeId = 'building-w1') {
+function fixture(reviewEnabled = true, scopeId = 'building-w1', agents = []) {
   const materials = [];
   const A = new Assembler({
     reviewEnabled,
@@ -53,7 +53,7 @@ function fixture(reviewEnabled = true, scopeId = 'building-w1') {
   A.put('sat_dish', 3, 0, 0); // synthetic scatter to exercise scope exclusion
   A.finalize(root, null);
   const world = { A, root };
-  const engine = { ctx: { get: (id) => id === 'world' ? world : { agents: [] } } };
+  const engine = { ctx: { get: (id) => id === 'world' ? world : { agents } } };
   return { A, root, engine, dispose() { A.dispose(); materials.forEach(m => m.dispose()); } };
 }
 
@@ -170,9 +170,32 @@ test('adapter preserves separate actors, canonical asset IDs and streamed descri
   assert.equal(index.scene.navigationSequences.length, 1);
   assert.ok(index.assetCatalog.assets.every(asset => asset.nodes.length === 0 && !asset.geometries));
   assert.ok(index.assetCatalog.assets.every(asset => asset.stream?.capability === SPATIAL_REVIEW_ASSET_STREAM_CAPABILITY));
+  assert.equal(review.composition.deferredStaticObjects, 1);
+  assert.equal(review.registry.getSourceStatus().readyActors, 0);
+  const structure = await produceStreamedAsset(review.registry, index.scene.actors[0].assetId, 'scene', 'overview');
+  assert.ok(structure.asset.nodes.some(node => node.name.includes('Building W1')));
   const compact = (await produceStreamedAsset(review.registry, 'prop-sat-dish')).asset;
   assert.ok(ArrayBuffer.isView(compact.geometries[0].geometry.positions));
   assert.ok(compact.nodes.some(node => node.name === 'sat_dish'));
+});
+
+test('enemy geometry uses the same deferred stream as the environment', async (t) => {
+  const geometry = new THREE.BoxGeometry(0.5, 1.8, 0.5);
+  const material = new THREE.MeshStandardMaterial({ name: 'enemy-uniform' });
+  const group = new THREE.Group();
+  group.add(new THREE.Mesh(geometry, material));
+  const value = fixture(true, 'building-w1', [{ variantName: 'rifleman', group }]);
+  const page = fakeWindow();
+  const review = attachClaudeOfDutyScene(value.engine);
+  t.after(() => {
+    try { review.dispose(); value.dispose(); geometry.dispose(); material.dispose(); }
+    finally { page.restore(); }
+  });
+
+  assert.equal(review.composition.enemies, 1);
+  assert.equal(review.composition.deferredEnemies, 1);
+  const enemy = await produceStreamedAsset(review.registry, 'enemy-rifleman', 'scene', 'overview');
+  assert.ok(enemy.asset.nodes.some(node => node.type === 'mesh'));
 });
 
 test('static project-relative discovery advertises the bounded frozen capture', async () => {
@@ -241,6 +264,8 @@ test('both bridges enforce origin/source checks and negotiate streamed geometry'
   const catalog = page.messages.find(message => message.value.type === SPATIAL_REVIEW_CATALOG)?.value;
   assert.equal(catalog.progressive, true);
   assert.equal(catalog.assetStream.capability, SPATIAL_REVIEW_ASSET_STREAM_CAPABILITY);
+  assert.equal(catalog.assetStream.maxConcurrentRequests, 2);
+  assert.equal(catalog.assetStream.maxInFlightBytes, 128 * 1024 * 1024);
   assert.equal(catalog.payload.scene.actors.length, 3);
   assert.ok(catalog.payload.assetCatalog.assets.every(asset => asset.nodes.length === 0));
   const descriptor = catalog.payload.assetCatalog.assets.find(asset => asset.id === 'prop-sat-dish').stream;

@@ -18,3 +18,12 @@ test('Pages entry loads the built bundle from the project subpath', async () => 
     assert.ok(bundle.includes(process.env.VITE_GIT_COMMIT), 'review build identity must include the deployed commit');
   }
 });
+
+test('Pages deployment includes the project-relative discovery document', async () => {
+  const discovery = JSON.parse(await readFile(new URL('.well-known/spatial-review.json', dist), 'utf8'));
+  assert.equal(discovery.schema, 'spatial-review-discovery/v1');
+
+  const workflow = await readFile(new URL('../.github/workflows/pages.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /uses: actions\/upload-pages-artifact@[^\n]+[\s\S]*?include-hidden-files:\s*true/,
+    'the Pages artifact upload must retain dist/.well-known/');
+});

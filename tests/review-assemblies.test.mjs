@@ -11,6 +11,21 @@ function matrixNear(actual, expected, message) {
   actual.elements.forEach((v, i) => assert.ok(Math.abs(v - expected.elements[i]) < 1e-9, `${message}, element ${i}`));
 }
 
+async function streamedAsset(registry, assetId, profile = 'review', purpose = 'detail') {
+  const descriptor = registry.getAssetStreamDescriptor(assetId, profile);
+  const representation = descriptor.representations.find(item => item.purpose === purpose);
+  const result = await registry.produceAssetRepresentation(
+    assetId,
+    profile,
+    representation.id,
+    64 * 1024 * 1024,
+    'interactive',
+    new AbortController().signal,
+  );
+  assert.ok(result);
+  return result.asset;
+}
+
 test('full procedural world: source-owned assemblies and unchanged rendering', async t => {
   const regular = await worldFixture(false);
   const expected = worldSnapshot(regular);
@@ -102,7 +117,7 @@ test('full procedural world: source-owned assemblies and unchanged rendering', a
     building.updateMatrixWorld(true);
   });
 
-  await t.test('installed registry has no duplicate actors and exports named, traceable structures', () => {
+  await t.test('installed registry has no duplicate actors and exports named, traceable structures', async () => {
     const previous = globalThis.window;
     globalThis.window = {
       location: new URL('http://localhost/'), parent: { postMessage() {} }, opener: null,
@@ -119,7 +134,9 @@ test('full procedural world: source-owned assemblies and unchanged rendering', a
       assert.equal(new Set(actors.map(a => a.actorId)).size, actors.length);
       assert.equal(bridge.composition.attachedParts, ownedMeshes.size);
       assert.equal(actors.some(a => a.assetId === 'prop-sat-dish'), true);
-      const asset = bridge.registry.toAsset('environment-building-be1', 'review');
+      const asset = deferred
+        ? await streamedAsset(bridge.registry, 'environment-building-be1')
+        : bridge.registry.toAsset('environment-building-be1', 'review');
       const names = new Set(asset.nodes.map(n => n.name));
       for (const name of ['Foundation', 'Floor 1', 'Facade north', 'Wall', 'Facade services', 'Roof', 'Services']) {
         assert.ok(names.has(name), `missing component ${name}`);
@@ -127,7 +144,10 @@ test('full procedural world: source-owned assemblies and unchanged rendering', a
       const sourced = asset.nodes.find(node => node.name === 'Facade services');
       assert.ok(sourced.sourceRef.includes('src/world/layout.js#BUILDINGS.BE1'), sourced.sourceRef);
       assert.ok(sourced.sourceRef.includes(sourced.id), sourced.sourceRef);
-      assert.deepEqual(asset.nodes.map(n => n.id), bridge.registry.toAsset(asset.id, 'review').nodes.map(n => n.id));
+      const repeated = deferred
+        ? await streamedAsset(bridge.registry, asset.id)
+        : bridge.registry.toAsset(asset.id, 'review');
+      assert.deepEqual(asset.nodes.map(n => n.id), repeated.nodes.map(n => n.id));
     } finally {
       bridge.dispose();
       if (previous === undefined) delete globalThis.window;
@@ -157,6 +177,7 @@ test('full procedural world: source-owned assemblies and unchanged rendering', a
       const scene = bridge.registry.toScene(true, deferred);
       const placementCount = A.reviewProps.reduce((sum, prop) => sum + prop.placements.length, 0);
       assert.equal(bridge.composition.deferredPropPlacements, deferred ? placementCount : 0);
+      assert.equal(bridge.composition.deferredStaticObjects, deferred ? A.reviewStructures.length : 0);
       assert.equal(scene.ownership.capability, 'scene-assemblies-v1');
       assert.equal(scene.ownership.mode, 'hierarchical');
       assert.equal(scene.assemblies.length, A.reviewAssemblies.length);
