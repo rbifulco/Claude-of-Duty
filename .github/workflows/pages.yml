@@ -2,7 +2,7 @@ name: Deploy Claude of Duty to GitHub Pages
 
 on:
   push:
-    branches: [spatial-review-pages]
+    branches: [spatial-review]
   workflow_dispatch:
 
 permissions:
@@ -49,7 +49,7 @@ jobs:
           path: dist
 
   deploy:
-    if: github.ref == 'refs/heads/spatial-review-pages'
+    if: github.ref == 'refs/heads/spatial-review'
     needs: build
     runs-on: ubuntu-latest
     permissions:

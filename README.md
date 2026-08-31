@@ -80,9 +80,10 @@ The published game lives at <https://rbifulco.github.io/Claude-of-Duty/>.
 Paste that full URL, including the project path, into Spatial Review.
 
 The [Pages workflow](.github/workflows/pages.yml) tests, builds, and deploys every
-push to `spatial-review-pages`; `main` is not changed or deployed by this workflow.
+push to `spatial-review`; `main` remains a clean mirror of the original repository
+and is not deployed by this workflow.
 GitHub Pages must use **GitHub Actions** as its publishing source, and the
-`github-pages` environment must allow the `spatial-review-pages` branch.
+`github-pages` environment must allow the `spatial-review` branch.
 The workflow obtains the site's base path from GitHub and embeds the source
 commit in the review build identity. No deployment token or secret is needed.
 
