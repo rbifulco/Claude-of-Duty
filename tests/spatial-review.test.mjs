@@ -9,6 +9,8 @@ import {
   SPATIAL_REVIEW_DISCOVERY_REQUEST,
   SPATIAL_REVIEW_ASSET_REQUEST,
   SPATIAL_REVIEW_ASSET_RESPONSE,
+  SPATIAL_REVIEW_ASSET_STREAM_CAPABILITY,
+  SPATIAL_REVIEW_ASSEMBLIES_CAPABILITY,
   SPATIAL_REVIEW_RESOURCE_REQUEST,
   SPATIAL_REVIEW_GEOMETRY_TRANSFER_CAPABILITY,
 } from '@alterno-dev/spatial-review';
@@ -85,6 +87,25 @@ function fakeWindow(href = 'http://127.0.0.1:5174/') {
   };
 }
 const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+const streamBudget = representation => Math.min(
+  64 * 1024 * 1024,
+  Math.max(1024 * 1024, Math.ceil(representation.estimatedBytes * 1.25)),
+);
+
+async function produceStreamedAsset(registry, assetId, profile = 'review', purpose = 'detail') {
+  const descriptor = registry.getAssetStreamDescriptor(assetId, profile);
+  const representation = descriptor.representations.find(item => item.purpose === purpose);
+  const result = await registry.produceAssetRepresentation(
+    assetId,
+    profile,
+    representation.id,
+    streamBudget(representation),
+    'interactive',
+    new AbortController().signal,
+  );
+  assert.ok(result);
+  return result;
+}
 
 test('embedded discovery skips game boot while an explicit live capture still boots', () => {
   assert.equal(shouldBootClaudeOfDutyPage({ embedded: false, spatialCapture: false }), true);
@@ -133,12 +154,12 @@ test('review metadata does not change renderer geometry, instances, or draw coun
   } finally { regular.dispose(); review.dispose(); }
 });
 
-test('adapter preserves separate actors, canonical asset IDs and progressive descriptors', (t) => {
+test('adapter preserves separate actors, canonical asset IDs and streamed descriptors', async (t) => {
   const page = fakeWindow();
   const value = fixture();
   const review = attachClaudeOfDutyScene(value.engine);
   t.after(() => { try { review.dispose(); value.dispose(); } finally { page.restore(); } });
-  const index = review.registry.toReviewIndex('scene');
+  const index = review.registry.toReviewIndex('scene', false, true, true, true);
   assert.equal(index.scene.actors.length, 3);
   assert.equal(index.assetCatalog.assets.length, 2);
   const dishes = index.scene.actors.filter(actor => actor.assetId === 'prop-sat-dish');
@@ -147,9 +168,9 @@ test('adapter preserves separate actors, canonical asset IDs and progressive des
   assert.notDeepEqual(dishes[0].transform.position, dishes[1].transform.position);
   assert.ok(index.scene.actors.every(actor => index.assetCatalog.assets.some(asset => actor.assetId === asset.id)));
   assert.equal(index.scene.navigationSequences.length, 1);
-  const metadata = review.registry.toReviewIndex('scene', false, true);
-  assert.ok(metadata.assetCatalog.assets.every(asset => asset.nodes.length === 0 && !asset.geometries));
-  const compact = review.registry.toAsset('prop-sat-dish', 'review', true);
+  assert.ok(index.assetCatalog.assets.every(asset => asset.nodes.length === 0 && !asset.geometries));
+  assert.ok(index.assetCatalog.assets.every(asset => asset.stream?.capability === SPATIAL_REVIEW_ASSET_STREAM_CAPABILITY));
+  const compact = (await produceStreamedAsset(review.registry, 'prop-sat-dish')).asset;
   assert.ok(ArrayBuffer.isView(compact.geometries[0].geometry.positions));
   assert.ok(compact.nodes.some(node => node.name === 'sat_dish'));
 });
@@ -164,17 +185,16 @@ test('static project-relative discovery advertises the bounded frozen capture', 
   assert.equal(document.liveCapture, '../?spatial-review-capture=1&prewarm=0');
 });
 
-test('canonical component IDs do not depend on the first placement scope', (t) => {
+test('canonical component IDs do not depend on the first placement scope', async (t) => {
   const page = fakeWindow();
   const a = fixture(true, 'building-w1');
   const b = fixture(true, 'building-e1');
   const left = attachClaudeOfDutyScene(a.engine);
   const right = attachClaudeOfDutyScene(b.engine);
   t.after(() => { try { left.dispose(); right.dispose(); a.dispose(); b.dispose(); } finally { page.restore(); } });
-  assert.deepEqual(
-    left.registry.toAsset('prop-sat-dish').nodes.map(node => node.id),
-    right.registry.toAsset('prop-sat-dish').nodes.map(node => node.id),
-  );
+  const leftAsset = (await produceStreamedAsset(left.registry, 'prop-sat-dish')).asset;
+  const rightAsset = (await produceStreamedAsset(right.registry, 'prop-sat-dish')).asset;
+  assert.deepEqual(leftAsset.nodes.map(node => node.id), rightAsset.nodes.map(node => node.id));
 });
 
 test('installed SDK refreshes transformed actors without changing their identity', (t) => {
@@ -195,7 +215,7 @@ test('installed SDK refreshes transformed actors without changing their identity
   assert.equal(registry.size, 0);
 });
 
-test('both bridges enforce origin/source checks and negotiate progressive geometry', async (t) => {
+test('both bridges enforce origin/source checks and negotiate streamed geometry', async (t) => {
   const page = fakeWindow();
   const value = fixture();
   const detachDiscovery = attachClaudeOfDutyDiscovery();
@@ -203,6 +223,7 @@ test('both bridges enforce origin/source checks and negotiate progressive geomet
   t.after(() => { try { detachDiscovery(); review.dispose(); value.dispose(); } finally { page.restore(); } });
   page.messages.length = 0;
   const request = { type: SPATIAL_REVIEW_REQUEST, requestId: 'catalog', profile: 'scene',
+    capabilities: [SPATIAL_REVIEW_ASSET_STREAM_CAPABILITY, SPATIAL_REVIEW_ASSEMBLIES_CAPABILITY],
     progressive: true, geometryTransfer: { capability: SPATIAL_REVIEW_GEOMETRY_TRANSFER_CAPABILITY, maxBytes: 1024 * 1024 } };
   for (const origin of ['https://unlisted.example', 'https://spatial-review.alterno.dev.evil.example']) {
     page.send({ type: SPATIAL_REVIEW_DISCOVERY_REQUEST, requestId: 'discovery' }, origin);
@@ -219,16 +240,27 @@ test('both bridges enforce origin/source checks and negotiate progressive geomet
   await settle();
   const catalog = page.messages.find(message => message.value.type === SPATIAL_REVIEW_CATALOG)?.value;
   assert.equal(catalog.progressive, true);
+  assert.equal(catalog.assetStream.capability, SPATIAL_REVIEW_ASSET_STREAM_CAPABILITY);
   assert.equal(catalog.payload.scene.actors.length, 3);
   assert.ok(catalog.payload.assetCatalog.assets.every(asset => asset.nodes.length === 0));
+  const descriptor = catalog.payload.assetCatalog.assets.find(asset => asset.id === 'prop-sat-dish').stream;
+  const representation = descriptor.representations.find(item => item.purpose === 'overview');
   page.send({ type: SPATIAL_REVIEW_ASSET_REQUEST, requestId: 'asset-1', assetId: 'prop-sat-dish',
-    buildId: review.registry.buildId, profile: 'scene' });
+    buildId: review.registry.buildId, profile: 'scene', stream: {
+      capability: SPATIAL_REVIEW_ASSET_STREAM_CAPABILITY,
+      representationId: representation.id,
+      maxBytes: streamBudget(representation),
+      priority: 'interactive',
+    } });
   await settle();
   const asset = page.messages.find(message => message.value.type === SPATIAL_REVIEW_ASSET_RESPONSE)?.value;
   assert.equal(asset.ok, true);
   assert.equal(asset.asset.id, 'prop-sat-dish');
+  assert.equal(asset.representationId, representation.id);
+  assert.equal(asset.asset.geometries[0].geometry.normals, undefined);
   // Transferring the response must not detach the registry's reusable buffers.
-  assert.ok(review.registry.toAsset('prop-sat-dish', 'scene', true).geometries[0].geometry.positions.length > 0);
+  const reused = await produceStreamedAsset(review.registry, 'prop-sat-dish', 'scene', 'overview');
+  assert.ok(reused.asset.geometries[0].geometry.positions.length > 0);
   detachDiscovery(); review.dispose();
   assert.equal(page.listeners.get('message').size, 0);
 });

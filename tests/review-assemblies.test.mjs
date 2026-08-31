@@ -110,7 +110,8 @@ test('full procedural world: source-owned assemblies and unchanged rendering', a
     };
     const bridge = attachClaudeOfDutyScene({ ctx: { get: id => id === 'world' ? world : { agents: [] } } });
     try {
-      const actors = bridge.registry.toActors();
+      const deferred = typeof bridge.registry.registerDeferred === 'function';
+      const actors = bridge.registry.toScene(true, deferred).actors;
       const placementCount = A.reviewProps.reduce((sum, prop) => sum + prop.placements.length, 0);
       assert.equal(bridge.composition.hierarchical, true);
       assert.equal(bridge.composition.assemblies, A.reviewAssemblies.length);
@@ -183,7 +184,7 @@ test('full procedural world: source-owned assemblies and unchanged rendering', a
           fixture.assetId,
           'review',
           representation.id,
-          representation.estimatedBytes,
+          Math.min(64 * 1024 * 1024, Math.max(1024 * 1024, Math.ceil(representation.estimatedBytes * 1.25))),
           'interactive',
           new AbortController().signal,
         );

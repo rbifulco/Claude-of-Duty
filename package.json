@@ -13,8 +13,8 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
-    "@alterno-dev/spatial-review": "0.5.0",
-    "@alterno-dev/spatial-review-protocol": "0.5.0",
+    "@alterno-dev/spatial-review": "0.6.0",
+    "@alterno-dev/spatial-review-protocol": "0.6.0",
     "three": "^0.180.0"
   },
   "devDependencies": {

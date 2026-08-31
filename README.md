@@ -19,14 +19,14 @@ R reload, Shift sprint, Ctrl crouch, Space jump, Q/E lean, Esc release.
 
 ## Spatial review
 
-The live Three.js world currently uses the published Spatial Review SDK **0.5.0**, pinned
+The live Three.js world currently uses the published Spatial Review SDK **0.6.0**, pinned
 with its protocol in `package.json` and `package-lock.json`. Both share the
 game's Three.js 0.180.0 runtime; no sibling checkout is needed. The bridge
 explicitly authorizes the official editor at `https://spatial-review.alterno.dev`
 and loopback editors during local development. Open the game URL in that editor
 to inspect the procedural market scene and the **Environment review tour**.
 The adapter also implements the accepted `scene-assemblies-v1` contract and
-activates it through SDK 0.5.0's `registerAssembly` API. Older SDKs without that
+activates it through SDK 0.6.0's `registerAssembly` API. Older SDKs without that
 API retain the tested flat v6 fallback.
 
 Scene composition follows authored ownership without changing the optimized
@@ -58,7 +58,7 @@ npm run build
 The advertised `?spatial-review-capture=1&prewarm=0` page uses seed `0x5eed1234`
 and the six enemies' initial poses, draws once, and does not run gameplay behind
 the editor. Normal play remains randomized and animated. Compatible editors
-automatically negotiate progressive assets, transferable geometry, and 0.5.0's
+automatically negotiate progressive assets, transferable geometry, and 0.6.0's
 ownership hierarchy independently; editors that do not negotiate hierarchy
 receive the flattened full-catalog fallback.
 

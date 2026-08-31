@@ -9,16 +9,17 @@ registered data categories, or framing permissions have been added.
 
 | Area | Decision / authoritative source |
 | --- | --- |
-| Dependencies | Pin the published npm SDK/protocol 0.5.0 release, sharing the game's Three.js 0.180.0. Cross-repository validation can still inject a sibling SDK build explicitly for pre-release changes. |
+| Dependencies | Pin the published npm SDK/protocol 0.6.0 release, sharing the game's Three.js 0.180.0. Cross-repository validation can still inject a sibling SDK build explicitly for pre-release changes. |
 | Actors | Transform-only owners for buildings, palms, lamps, sandbag walls, and the gate. Register structure and attached fixtures as independent child placements. Keep loose placements at World; retain broad context zones. |
 | Assets | Preserve placement-specific procedural structure assets. Every repeated prop, attached or loose, references its canonical `prop-*` prototype asset. |
 | Navigation | Keep the five-view review tour sourced from `SHOTS` in `src/dev/shots.js`. Linear transitions are a review-only approximation, not a gameplay route. |
 | Capture | Use the existing RNG with fixed seed `0x5eed1234`, six boot-pose enemies, one hero-view render, and no running simulation or frame-stat polling. Hide the unposed first-person rig in this snapshot only. Ordinary gameplay remains unchanged. |
 | Performance | Publish project-relative discovery, keep the frozen one-frame capture, and bound geometry to one 64 MiB request with a 32-request queue. With `asset-stream-v1`, publish all prop transforms/bounds immediately and construct the 3,206 review-only placement mirrors only when their shared asset is requested. |
-| Lifecycle | Discovery starts on the ordinary entry page; an unflagged editor iframe serves only that lightweight bridge so cold game boot cannot starve the handshake. The scene bridge starts after construction in top-level play or the explicitly flagged live-capture iframe. Both detach on HMR. Refresh rebuilds the snapshot; SDK 0.5.0 keeps the eager progressive fallback, while an injected/released asset-stream-capable SDK adds deferred representations, status, cancellation, typed instances, and bounded streaming. |
+| Lifecycle | Discovery starts on the ordinary entry page; an unflagged editor iframe serves only that lightweight bridge so cold game boot cannot starve the handshake. The scene bridge starts after construction in top-level play or the explicitly flagged live-capture iframe. Both detach on HMR. Refresh rebuilds the snapshot; SDK 0.6.0 adds deferred representations, status, cancellation, typed instances, and bounded streaming. Non-streaming peers receive the eager structure/context catalog; deferred-only prop placements require `asset-stream-v1`. |
 
-The installed 0.5.0 SDK supports cached transforms/bounds, ref-counted runtime
-resources, negotiated progressive/transferable geometry, and transform-only
+The installed 0.6.0 SDK supports cached transforms/bounds, ref-counted runtime
+resources, negotiated progressive/transferable geometry, deferred asset
+representations, bounded streaming, and transform-only
 assemblies. Hierarchy-aware editors receive the v7 ownership graph; consumers
 that do not negotiate hierarchy receive a flattened world-space catalog. The
 adapter retains `registerAssembly` feature detection so an explicitly installed
@@ -33,12 +34,14 @@ limits are intentionally conservative because the editor can keep multiple
 source frames alive: one active 64 MiB family, a 64 MiB aggregate reservation,
 and 32 queued requests per frame.
 
-When the sibling/future SDK exposes `registerDeferred`, repeated prop placements
+With SDK 0.6.0, `registerDeferred` lets repeated prop placements
 register accurate world transforms and geometry-derived bounds without retaining
 one `THREE.Mesh` mirror per actor. The canonical prop factory is materialized only
 for a requested overview/detail family, reports bounded progress, and honors
-cancellation. The existing eager path remains active with published SDK 0.5.0,
-so current deployments and older editors keep their complete/progressive fallback.
+cancellation. The eager structure/context path remains the complete/progressive
+fallback for peers that do not negotiate asset streaming; deferred-only prop
+placements are intentionally omitted because they have no synchronous geometry.
+The adapter's SDK 0.5 compatibility path still registers those props eagerly.
 
 ## Assembly ownership
 

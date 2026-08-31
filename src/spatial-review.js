@@ -1,5 +1,6 @@
 import {
   SceneAssetRegistry,
+  SPATIAL_REVIEW_ASSET_STREAM_CAPABILITY,
   attachSceneAssetRegistryBridge,
   attachSpatialReviewDiscoveryBridge,
 } from '@alterno-dev/spatial-review';
@@ -19,7 +20,7 @@ const STREAMING_BRIDGE_OPTIONS = {
   maxQueuedAssetRequests: 32,
   progressIntervalMs: 120,
 };
-const ASSET_STREAM_CAPABILITY = 'asset-stream-v1';
+const STREAM_METADATA_HEADROOM = 64 * 1024;
 const PROP_CATEGORY_RULES = [
   [/^(palm_|shrub$|weeds$|planter$)/, 'Props / Vegetation'],
   [/^(brick_|rock_|slab_|rebar$|plank_|litter$|pock$|dust_skirt$)/, 'Props / Debris'],
@@ -76,8 +77,20 @@ function geometryBytes(geometry, attributes) {
   return bytes;
 }
 
-function createPropMirror(prop, placement, world, ThreeRuntime = THREE) {
-  const root = new ThreeRuntime.Mesh(prop.geometry, prop.material);
+function streamEstimate(geometryBytes) {
+  return Math.min(1024 * 1024 * 1024, geometryBytes + STREAM_METADATA_HEADROOM);
+}
+
+function overviewGeometry(source, ThreeRuntime) {
+  const geometry = new ThreeRuntime.BufferGeometry();
+  geometry.setAttribute('position', source.getAttribute('position'));
+  if (source.index) geometry.setIndex(source.index);
+  return geometry;
+}
+
+function createPropMirror(prop, placement, world, ThreeRuntime = THREE, purpose = 'detail') {
+  const geometry = purpose === 'overview' ? overviewGeometry(prop.geometry, ThreeRuntime) : prop.geometry;
+  const root = new ThreeRuntime.Mesh(geometry, prop.material);
   // Component identity belongs to the design, not whichever placement is
   // first in the catalog. The actor name still identifies placement.
   root.name = prop.id;
@@ -103,14 +116,14 @@ function registerDeferredProp(registry, prop, placement, registration, world, Th
     transform: transformFromMatrix(placement.matrix),
     bounds: propBounds(prop.geometry, placement.matrix),
     stream: {
-      capability: ASSET_STREAM_CAPABILITY,
+      capability: SPATIAL_REVIEW_ASSET_STREAM_CAPABILITY,
       revision,
       representations: [
         {
           id: 'overview',
           purpose: 'overview',
           revision: `${revision}-overview`,
-          estimatedBytes: overviewBytes,
+          estimatedBytes: streamEstimate(overviewBytes),
           triangles,
           attributes: ['position'],
           geometricError: 0,
@@ -119,17 +132,17 @@ function registerDeferredProp(registry, prop, placement, registration, world, Th
           id: 'detail',
           purpose: 'detail',
           revision: `${revision}-detail`,
-          estimatedBytes: detailBytes,
+          estimatedBytes: streamEstimate(detailBytes),
           triangles,
           attributes: detailAttributes,
           geometricError: 0,
         },
       ],
     },
-    produceRepresentation({ signal, reportProgress }) {
+    produceRepresentation({ representation, signal, reportProgress }) {
       if (signal.aborted) throw new DOMException('Prop request cancelled.', 'AbortError');
       reportProgress({ phase: 'generating', completed: 0, total: 1 });
-      const root = createPropMirror(prop, placement, world, ThreeRuntime);
+      const root = createPropMirror(prop, placement, world, ThreeRuntime, representation.purpose);
       if (signal.aborted) throw new DOMException('Prop request cancelled.', 'AbortError');
       reportProgress({ phase: 'generating', completed: 1, total: 1 });
       return root;
