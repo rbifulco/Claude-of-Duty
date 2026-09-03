@@ -19,7 +19,7 @@ R reload, Shift sprint, Ctrl crouch, Space jump, Q/E lean, Esc release.
 
 ## Spatial review
 
-The live Three.js world currently uses the published Spatial Review SDK **0.6.0**, pinned
+The live Three.js world currently uses the published Spatial Review SDK **0.7.0**, pinned
 with its protocol in `package.json` and `package-lock.json`. Both share the
 game's Three.js 0.180.0 runtime; no sibling checkout is needed. The bridge
 explicitly authorizes the official editor at `https://spatial-review.alterno.dev`

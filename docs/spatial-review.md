@@ -5,11 +5,16 @@ This is a refinement of the existing integration using the current
 The existing official-editor authorization is retained. No production origins,
 registered data categories, or framing permissions have been added.
 
+The 2026-09-03 SDK/protocol update pins 0.7.0. Both bridges explicitly set
+`allowLoopbackPeers: true` to preserve the approved cross-port local workflow.
+Origin-policy advertisement remains disabled. Denied live handshakes receive
+a typed rejection without scene data; asset/resource requests remain protected.
+
 ## Inventory and upgrade plan
 
 | Area | Decision / authoritative source |
 | --- | --- |
-| Dependencies | Pin the published npm SDK/protocol 0.6.0 release, sharing the game's Three.js 0.180.0. Cross-repository validation can still inject a sibling SDK build explicitly for pre-release changes. |
+| Dependencies | Pin the published npm SDK/protocol 0.7.0 release, sharing the game's Three.js 0.180.0. Cross-repository validation can still inject a sibling SDK build explicitly for pre-release changes. |
 | Actors | Transform-only owners for buildings, palms, lamps, sandbag walls, and the gate. Register structure and attached fixtures as independent child placements. Keep loose placements at World; retain broad context zones. |
 | Assets | Preserve placement-specific procedural structure assets. Every repeated prop, attached or loose, references its canonical `prop-*` prototype asset. |
 | Navigation | Keep the five-view review tour sourced from `SHOTS` in `src/dev/shots.js`. Linear transitions are a review-only approximation, not a gameplay route. |

@@ -11,7 +11,8 @@ import { SHOTS } from './dev/shots.js';
 // editor uses this to avoid replacing a saved scene with an identical handoff.
 const BUILD_ID = `claude-of-duty-ownership-v7-${import.meta.env?.VITE_GIT_COMMIT || 'development'}`;
 export const SPATIAL_REVIEW_SEED = 0x5eed1234;
-const AUTHORIZATION_OPTIONS = { allowOfficialEditor: true };
+// SDK 0.7 requires an explicit opt-in for the existing cross-port local workflow.
+const AUTHORIZATION_OPTIONS = { allowOfficialEditor: true, allowLoopbackPeers: true };
 const STREAMING_BRIDGE_OPTIONS = {
   ...AUTHORIZATION_OPTIONS,
   maxGeometryBytes: 64 * 1024 * 1024,

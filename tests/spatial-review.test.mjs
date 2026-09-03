@@ -6,6 +6,7 @@ import {
   SceneAssetRegistry,
   SPATIAL_REVIEW_REQUEST,
   SPATIAL_REVIEW_CATALOG,
+  SPATIAL_REVIEW_CONNECTION_REJECTED,
   SPATIAL_REVIEW_DISCOVERY_REQUEST,
   SPATIAL_REVIEW_ASSET_REQUEST,
   SPATIAL_REVIEW_ASSET_RESPONSE,
@@ -233,7 +234,14 @@ test('both bridges enforce origin/source checks and negotiate streamed geometry'
   }
   page.send(request, undefined, {}); // correct origin, unrelated window
   await settle();
-  assert.equal(page.messages.length, 0);
+  assert.equal(page.messages.length, 2);
+  for (const { value } of page.messages) {
+    assert.equal(value.type, SPATIAL_REVIEW_CONNECTION_REJECTED);
+    assert.equal(value.requestId, 'catalog');
+    assert.equal(value.code, 'editor-origin-not-authorized');
+    assert.equal(value.payload, undefined);
+  }
+  page.messages.length = 0;
   page.send({ type: SPATIAL_REVIEW_DISCOVERY_REQUEST, requestId: 'discovery' });
   assert.match(page.messages[0].value.discovery.liveCapture, /spatial-review-capture=1/);
   page.send(request);
@@ -263,6 +271,23 @@ test('both bridges enforce origin/source checks and negotiate streamed geometry'
   assert.ok(reused.asset.geometries[0].geometry.positions.length > 0);
   detachDiscovery(); review.dispose();
   assert.equal(page.listeners.get('message').size, 0);
+});
+
+test('both actual bridges preserve the approved cross-port loopback workflow', async (t) => {
+  const page = fakeWindow();
+  const value = fixture();
+  const detachDiscovery = attachClaudeOfDutyDiscovery();
+  const review = attachClaudeOfDutyScene(value.engine);
+  t.after(() => { try { detachDiscovery(); review.dispose(); value.dispose(); } finally { page.restore(); } });
+  page.messages.length = 0;
+  page.send({ type: SPATIAL_REVIEW_DISCOVERY_REQUEST, requestId: 'local-discovery' }, 'http://localhost:5173');
+  page.send({ type: SPATIAL_REVIEW_REQUEST, requestId: 'local-capture' }, 'http://localhost:5173');
+  await settle();
+  const discovery = page.messages.find(({ value }) => value.discovery)?.value.discovery;
+  assert.ok(discovery);
+  assert.equal(discovery.capabilities?.liveCapture?.editorOriginPolicy, undefined);
+  assert.ok(page.messages.some(({ value }) => value.type === SPATIAL_REVIEW_CATALOG));
+  assert.ok(page.messages.every(({ origin }) => origin === 'http://localhost:5173'));
 });
 
 test('tour stops and shared camera/aim endpoints match their authoritative shots', () => {
