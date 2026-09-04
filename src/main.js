@@ -15,6 +15,7 @@ import { AudioSystem } from './audio/index.js';
 
 import { installShotApi, SHOTS } from './dev/shots.js';
 import { prewarm } from './core/prewarm.js';
+import { prepareReviewTextureSources } from './review-texture-export.js';
 import {
   attachClaudeOfDutyDiscovery,
   attachClaudeOfDutyScene,
@@ -102,6 +103,13 @@ if (shouldBootClaudeOfDutyPage({ embedded: window.parent !== window, spatialCapt
   // Register after boot and pre-warm so a review catalog request cannot race the
   // level builder or shader compiler. Serialization remains lazy until an editor
   // explicitly asks for the scene.
+  if (spatialCapture) {
+    const materials = engine.ctx.get('materials');
+    const exported = await prepareReviewTextureSources(
+      engine.ctx.get('render').renderer, materials._forge?._owned ?? [], materials._materials.values(),
+    );
+    console.info(`[spatial-review] Exported ${exported} shared generated textures for the frozen capture.`);
+  }
   const spatialReview = attachClaudeOfDutyScene(engine);
   window.__SPATIAL_REVIEW__ = spatialReview;
 

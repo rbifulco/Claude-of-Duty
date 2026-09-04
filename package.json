@@ -6,7 +6,7 @@
     "build": "vite build",
     "preview": "vite preview --port 4173",
     "shot": "node tools/capture.mjs",
-    "test:spatial-review": "node --test tests/spatial-review.test.mjs tests/review-assemblies.test.mjs",
+    "test:spatial-review": "node --test tests/spatial-review.test.mjs tests/review-assemblies.test.mjs tests/review-texture-export.test.mjs",
     "test:pages": "node --test tests/pages-build.test.mjs"
   },
   "author": "",
