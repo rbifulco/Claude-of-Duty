@@ -290,6 +290,23 @@ test('both actual bridges preserve the approved cross-port loopback workflow', a
   assert.ok(page.messages.every(({ origin }) => origin === 'http://localhost:5173'));
 });
 
+test('the live catalog is delivered while texture preparation is still pending', async (t) => {
+  const page = fakeWindow(), value = fixture();
+  let resolve;
+  const texturePreparation = new Promise(done => { resolve = done; });
+  const review = attachClaudeOfDutyScene(value.engine, { texturePreparation });
+  t.after(() => { resolve(); review.dispose(); value.dispose(); page.restore(); });
+  page.messages.length = 0;
+  page.send({ type: SPATIAL_REVIEW_REQUEST, requestId: 'catalog-before-textures', profile: 'scene',
+    capabilities: [SPATIAL_REVIEW_ASSET_STREAM_CAPABILITY, SPATIAL_REVIEW_ASSEMBLIES_CAPABILITY],
+    progressive: true, geometryTransfer: { capability: SPATIAL_REVIEW_GEOMETRY_TRANSFER_CAPABILITY, maxBytes: 1024 * 1024 } });
+  await settle();
+  const catalog = page.messages.find(({ value }) => value.type === SPATIAL_REVIEW_CATALOG)?.value;
+  assert.ok(catalog, 'catalog must not wait for texture preparation');
+  assert.equal(catalog.payload.scene.actors.length, 3);
+  assert.ok(catalog.payload.assetCatalog.assets.length > 0);
+});
+
 test('tour stops and shared camera/aim endpoints match their authoritative shots', () => {
   const sequence = buildEnvironmentReviewTour();
   assert.equal(sequence.stops.length, 5);

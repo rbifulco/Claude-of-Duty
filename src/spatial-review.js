@@ -6,6 +6,7 @@ import {
 } from '@alterno-dev/spatial-review';
 import * as THREE from 'three';
 import { SHOTS } from './dev/shots.js';
+import { gateReviewTextureResources } from './review-texture-export.js';
 
 // Change when the review catalog's stable actor/asset addressing changes. The
 // editor uses this to avoid replacing a saved scene with an identical handoff.
@@ -387,6 +388,8 @@ export function attachClaudeOfDutyScene(engine, dependencies = {}) {
       `${enemies} enemies · ${registry.navigationSize} path`
   );
 
+  const disposeTextureGate = dependencies.texturePreparation
+    ? gateReviewTextureResources(registry, dependencies.texturePreparation) : null;
   const detachBridge = attachRegistryBridge(registry, STREAMING_BRIDGE_OPTIONS);
 
   return {
@@ -394,6 +397,7 @@ export function attachClaudeOfDutyScene(engine, dependencies = {}) {
     composition: { ...composition, enemies },
     dispose() {
       detachBridge();
+      disposeTextureGate?.();
       mirrors.length = 0;
     },
   };

@@ -103,15 +103,30 @@ if (shouldBootClaudeOfDutyPage({ embedded: window.parent !== window, spatialCapt
   // Register after boot and pre-warm so a review catalog request cannot race the
   // level builder or shader compiler. Serialization remains lazy until an editor
   // explicitly asks for the scene.
-  if (spatialCapture) {
-    const materials = engine.ctx.get('materials');
-    const exported = await prepareReviewTextureSources(
-      engine.ctx.get('render').renderer, materials._forge?._owned ?? [], materials._materials.values(),
-    );
-    console.info(`[spatial-review] Exported ${exported} shared generated textures for the frozen capture.`);
-  }
-  const spatialReview = attachClaudeOfDutyScene(engine);
+  const textureAbort = new AbortController();
+  const materials = engine.ctx.get('materials');
+  const texturePreparation = spatialCapture ? prepareReviewTextureSources(
+    engine.ctx.get('render').renderer, materials._forge?._owned ?? [], materials._materials.values(),
+    undefined, { signal: textureAbort.signal },
+  ) : undefined;
+  const spatialReview = attachClaudeOfDutyScene(engine, { texturePreparation });
   window.__SPATIAL_REVIEW__ = spatialReview;
+  const stopCapture = () => { textureAbort.abort(); spatialReview.dispose(); };
+  if (spatialCapture) addEventListener('pagehide', stopCapture, { once: true });
+
+  // Publish the catalog before awaiting texture work. The resource gate above
+  // prevents an early texture request from seeing an unexported GPU source.
+  if (texturePreparation) {
+    try {
+      const exported = await texturePreparation;
+      console.info(`[spatial-review] Exported ${exported} shared generated textures for the frozen capture.`);
+    } catch (error) {
+      if (!textureAbort.signal.aborted) spatialReview.registry.setSourceStatus({
+        phase: 'error', message: `Review texture preparation failed: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500),
+      });
+      throw error;
+    }
+  }
 
   if (!spatialCapture) engine.start();
 
@@ -156,7 +171,8 @@ if (shouldBootClaudeOfDutyPage({ embedded: window.parent !== window, spatialCapt
 
   if (import.meta.hot) {
     import.meta.hot.dispose(() => {
-      spatialReview.dispose();
+      removeEventListener('pagehide', stopCapture);
+      stopCapture();
       detachSpatialReviewDiscovery();
       delete window.__SPATIAL_REVIEW__;
       engine.dispose();

@@ -160,6 +160,41 @@ the advertised capture page is an intentionally frozen boot-state snapshot.
 
 ## Verification
 
+### Hidden cross-site capture startup (2026-09-04)
+
+The scene bridge now attaches immediately after world registration, before
+waiting for generated texture PNGs. Catalog and geometry requests remain
+available during export; texture resource requests wait for preparation and
+retain its failure if export fails. SDK origin/source checks and resource byte
+limits are unchanged. Leaving the explicit capture aborts follow-on GPU work.
+
+Each referenced shared render target is read and encoded once, with a
+MessageChannel task yield between targets. Both Three.js's asynchronous GPU
+fence polling and asynchronous canvas PNG encoding were delayed in a hidden
+cross-site iframe. Instrumented measurements of `convertToBlob` showed about
+1,000 ms per texture even though readback and task yields were fast. Bounded
+synchronous readback/PNG encoding removes those waits without changing source
+textures, color space, alpha, orientation, scene geometry, or ordinary gameplay.
+Temporary diagnostic instrumentation is not part of the patch.
+
+Production-build browser verification used the editor at `127.0.0.1:5207`
+and Claude at `localhost:5213`, deliberately different sites rather than only
+different ports on one host. The original async encoding still reproduced a
+texture timeout after early catalog delivery. The corrected capture completed
+and exposed Open editor. Scene opened with 3,216/3,216 asset meshes; Building
+BE1 reported 66/66 textures ready; opening the asset tree for the first time
+showed 87 prepared previews, zero placeholders and zero pending previews.
+Scene → Asset → Experience retained the prepared workspace.
+A second run of the clean production bundle (without instrumentation), using
+Claude at `localhost:5212`, also reached Open editor and opened the scene. The
+GitHub Pages subpath build and its artifact test pass.
+
+All 29 integration tests pass, including catalog delivery before texture
+completion, concurrent early resource reads, retained export errors, abort,
+PNG encoding without idle callbacks, canvas cleanup, and GPU/source neutrality.
+These are local production-build checks, not a claim of post-deployment
+verification or exhaustive material fidelity across every asset.
+
 `npm run test:spatial-review` tests full-world render/collision buffer, instance
 mask, light and RNG neutrality; exact owned-placement world poses; explicit
 ownership counts; owner move/rotate/scale/hide isolation; no duplicate actors;
