@@ -1,0 +1,12 @@
+import {chromium} from 'playwright';
+import {writeFileSync} from 'node:fs';
+const browser=await chromium.launch({headless:true,args:['--use-angle=metal','--ignore-gpu-blocklist','--mute-audio','--remote-debugging-port=9412']});
+const page=await browser.newPage({viewport:{width:1280,height:800}});
+page.on('pageerror',e=>console.log('PAGEERROR',e.message));
+await page.goto(process.argv[2] || 'http://127.0.0.1:4412/review/?site=http%3A%2F%2F127.0.0.1%3A4312%2F');
+await page.waitForTimeout(2000);
+console.log((await page.locator('body').innerText()).slice(0,18000));
+await page.screenshot({path:'docs/evidence/editor-initial.png'});
+console.log('CDP_READY');
+await new Promise(resolve=>{process.on('SIGTERM',resolve);process.on('SIGINT',resolve);browser.on('disconnected',resolve)});
+await browser.close();

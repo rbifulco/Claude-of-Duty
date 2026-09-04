@@ -1,0 +1,136 @@
+ABOUT
+HOW IT WORKS
+GITHUB
+↗
+STRUCTURED CONTEXT FOR SPATIAL WORK
+Make spatial intent clear.
+Give coding agents the right feedback.
+
+Share scenes, paths, assets, and feedback as structured context—so coding agents can act on what you mean, not just what they see.
+
+Integrated website URL
+◎
+RETRY
+Connection stopped · review the pane on the right
+!
+CONNECTION STOPPED
+Couldn’t prepare the editor.
+
+Could not prepare Building E2 / rock b context: Maximum update depth exceeded. This can happen when a component repeatedly calls setState inside componentWillUpdate or componentDidUpdate. React limits the number of nested updates to prevent infinite loops.
+
+Try connecting again or select a different example.
+Use the left and right arrow keys to change projects. Home selects the first project and End selects the last.
+EXPLORE EXAMPLE SITES
+Spatial work, ready to review.
+←
+02 / 04
+→
+03
+PROCEDURAL FPS
+Claude of Duty
+A fully procedural browser FPS with an explorable market district, weapons, AI combatants, physics, cinematic post-processing, and synthesized audio.
+→
+04
+PROCEDURAL LANDSCAPE
+Sedona Sunset
+A first-person golden-hour hike through a procedurally generated red-rock wash, with terrain, vegetation, atmosphere, and sound built entirely in code.
+→
+01
+CINEMATIC JOURNEY
+Sole — Afterlight
+A cinematic walk through a sun-scorched hill village near Orvieto, told through five guided chapters, environmental details, and a continuous 3D route.
+→
+02
+SCROLL-LED EXPLORATION
+Kage
+A five-chapter night walk through a Kyoto mountain temple, pairing live WebGL architecture, lantern light, ritual, and restrained scroll-led storytelling.
+→
+03
+PROCEDURAL FPS
+Claude of Duty
+A fully procedural browser FPS with an explorable market district, weapons, AI combatants, physics, cinematic post-processing, and synthesized audio.
+→
+04
+PROCEDURAL LANDSCAPE
+Sedona Sunset
+A first-person golden-hour hike through a procedurally generated red-rock wash, with terrain, vegetation, atmosphere, and sound built entirely in code.
+→
+01
+CINEMATIC JOURNEY
+Sole — Afterlight
+A cinematic walk through a sun-scorched hill village near Orvieto, told through five guided chapters, environmental details, and a continuous 3D route.
+→
+01
+What is Spatial Review?
+
+Spatial Review is a shared layer between a live web experience and the people—or agents—working on it. It turns a visual, interactive scene into inspectable project context.
+
+Instead of flattening a spatial experience into a screenshot, it keeps the camera, scene structure, routes, assets, and feedback connected. Everyone can discuss the same place with the same references.
+
+02
+Why it exists
+
+A screenshot shows an outcome. Spatial Review preserves the intent behind it.
+
+01
+See beyond pixels
+
+Review the scene graph, camera paths, assets, and live experience together—not as disconnected evidence.
+
+02
+Point to the right thing
+
+Feedback stays anchored to exact objects, moments, and sources, reducing ambiguity across every iteration.
+
+03
+Give agents usable context
+
+Structured review data can travel back into a coding workflow, so an agent can understand and act on intent.
+
+03
+How it connects to the editor
+
+The website remains the source experience. The editor becomes the place where its spatial context is inspected and discussed.
+
+01
+WEBSITE
+Publish a discovery document
+
+An integrated site exposes a small manifest at /.well-known/spatial-review.json, pointing to its scene, assets, and review capabilities.
+
+02
+CONNECTION
+Load the project context
+
+Paste the site URL here. Spatial Review discovers the available documents or asks the live site for a capture, then prepares a local review workspace.
+
+03
+EDITOR
+Review in the right view
+
+Move between scene, experience, and asset views. Follow paths, inspect exact sources, and leave feedback where it belongs.
+
+04
+AGENT HANDOFF
+Return structured feedback
+
+The resulting context is explicit enough for a coding agent to trace the request back to the relevant place and make a targeted change.
+
+LIVE SITE
+→
+DISCOVERY
+→
+SPATIAL REVIEW
+→
+CODING AGENT
+OPEN PROTOCOL, PRACTICAL WORKFLOW
+Build the experience.
+Review the intent.
+
+Start with one of the examples above, or integrate your own site using the open source protocol.
+
+READ THE INTEGRATION GUIDE
+↗
+ALTERNO SPATIAL REVIEW
+BACK TO TOP ↑
+SOURCE AND INTEGRATION GUIDE ↗

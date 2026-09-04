@@ -1,0 +1,37 @@
+{
+  "label": "after",
+  "url": "http://127.0.0.1:4312/",
+  "readyMs": 3918.600000143051,
+  "interactionMs": 532,
+  "before": [
+    12,
+    1.75,
+    18
+  ],
+  "after": [
+    10.847511485067821,
+    1.671095233808248,
+    16.281686864740106
+  ],
+  "moved": 2.070520651909814,
+  "fire": 7,
+  "rendering": {
+    "info": {
+      "frame": 15,
+      "calls": 1143,
+      "tris": 8410630,
+      "programs": 207,
+      "textures": 132,
+      "geometries": 224,
+      "ms": 16.666666666666657
+    },
+    "world": {
+      "staticTris": 606374,
+      "instTris": 1146484,
+      "instances": 8008,
+      "drawCalls": 220,
+      "collideTris": 38580
+    }
+  },
+  "errors": []
+}

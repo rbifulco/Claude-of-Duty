@@ -39,7 +39,8 @@ const _UP = new THREE.Vector3(0, 1, 0);
 const CHUNK = 64;
 
 export class Assembler {
-  constructor({ materials, rng, render }) {
+  constructor({ materials, rng, render, review }) {
+    this.review = review;
     this.materials = materials;
     this.rng = rng;
     this.render = render;
@@ -136,6 +137,7 @@ export class Assembler {
       this._static.set(key, a);
     }
     a.add(geo, this._x(matrix), opts);
+    this.review?.add(key, geo, this._x(matrix), opts);
     return this;
   }
 
@@ -222,6 +224,7 @@ export class Assembler {
       return this;
     }
     p.matrices.push(this._x(matrix).clone());
+    this.review?.place(p, p.matrices.at(-1), masks);
     p.masks.push(masks ? [masks[0], masks[1], masks[2]] : null);
     return this;
   }

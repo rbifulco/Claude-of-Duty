@@ -169,6 +169,7 @@ export function buildBuilding(A, rng, spec) {
   // ---------------------------------------------------------------- plinth --
   // A base course everywhere: catches the ground grime band and stops the walls
   // reading as slabs dropped on a plane.
+  A.review?.part('Foundation');
   const plinthH = spec.plinthH ?? 0.42;
   A.add(
     spec.plinthKey ?? 'concrete',
@@ -186,11 +187,13 @@ export function buildBuilding(A, rng, spec) {
     info.floorY.push(y);
     for (let side = 0; side < 4; side++) {
       if (spec.skipSides?.includes(side)) continue;
+      A.review?.part(`Floor ${f + 1} / Facade ${['north','east','south','west'][side]}`);
       buildFacade(A, rng, fs, info, { side, f, y, h, t, wallKey, streetSide, floors });
     }
     // ---- floor / ceiling slab of the NEXT level ----
     y += h;
     if (f < floors - 1) {
+      A.review?.part(`Floor ${f + 2} / Slab and terrace`);
       interiorSlab(A, rng, floorSpec(spec, f + 1), y, t, f + 1);
       // the setback happens on top of this floor: dress the exposed strip
       if (spec.setback && f + 1 === spec.setback.from) {
@@ -202,6 +205,7 @@ export function buildBuilding(A, rng, spec) {
   info.top = y;
 
   // ------------------------------------------------------------------ roof --
+  A.review?.part('Roof and parapet');
   const ts = floorSpec(spec, floors - 1);
   interiorSlab(A, rng, ts, y, t, floors, true);
   if (spec.parapet !== false) {
@@ -213,6 +217,7 @@ export function buildBuilding(A, rng, spec) {
   info.roofSpec = ts;
 
   // ----------------------------------------------------------- interiors ---
+  A.review?.part('Interior');
   if (spec.enterable) {
     buildInterior(A, rng, spec, info, t, groundH, upperH, floors);
   } else {
@@ -255,6 +260,7 @@ export function buildBuilding(A, rng, spec) {
   // three metres into open sky and reads as a floating mast — which is exactly
   // what it was doing. Clamp the top to the parapet of whatever surface is
   // actually above the pipe.
+  A.review?.part('Drainpipes');
   const dpSide = streetSide;
   const pmD = panelMatrix(spec, dpSide, 0);
   const len = sideLen(spec, dpSide);

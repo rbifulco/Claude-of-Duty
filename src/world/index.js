@@ -103,7 +103,7 @@ export class WorldSystem {
     materials.setGroundLevel?.(0);
 
     const t0 = performance.now();
-    const A = new Assembler({ materials, rng, render });
+    const A = new Assembler({ materials, rng, render, review: ctx.reviewCapture });
     this.A = A;
     A.setTransform(LEVEL_YAW, LEVEL_TX, LEVEL_TZ);
 
@@ -112,13 +112,16 @@ export class WorldSystem {
     registerDressingProps(A, rng);
 
     // 2. ground, then the shells, then what people put in and on them
+    A.review?.scope('ground', 'Ground and pavement', 'src/world/ground.js#buildGround');
     buildGround(A, rng);
 
     const infos = [];
     for (const spec of BUILDINGS) {
+      A.review?.scope(`building-${spec.id}`, `Building ${spec.id}`, `src/world/layout.js#${spec.id}`, A.toWorld(spec.x, 0, spec.z));
       const info = buildBuilding(A, rng, spec);
       infos.push(info);
       if (spec.collapse) {
+        A.review?.part('Roof damage and rubble');
         collapseRoof(A, rng, spec, info, {
           x: spec.x + rng.range(-2, 2),
           z: spec.z + rng.range(-2, 2),
@@ -127,10 +130,14 @@ export class WorldSystem {
     }
     this.buildings = infos;
 
+    A.review?.scope('buildGate', 'Market gate', 'src/world/dressing.js#buildGate', A.toWorld(0, 0, GATE.z));
     buildGate(A, rng);
+    A.review?.scope('buildPerimeter', 'Perimeter', 'src/world/dressing.js#buildPerimeter');
     buildPerimeter(A, rng);
+    A.review?.scope('dressStreet', 'Street furnishings', 'src/world/dressing.js#dressStreet');
     dressStreet(A, rng);
     dressBuildings(A, rng, infos);
+    A.review?.scope('scatterDebris', 'Surface debris', 'src/world/dressing.js#scatterDebris');
     scatterDebris(A, rng);
 
     this._addLights(A);

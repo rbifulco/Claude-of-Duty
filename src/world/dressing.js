@@ -1409,7 +1409,12 @@ function coverClusters(A, rng) {
  */
 export function dressBuildings(A, rng, infos) {
   A.jitter = jitterRig();
-  for (const info of infos) dressBuilding(A, rng, info);
+  for (const info of infos) {
+    A.review?.scope(`building-${info.spec.id}`, `Building ${info.spec.id}`, `src/world/layout.js#${info.spec.id}`, A.toWorld(info.spec.x, 0, info.spec.z));
+    A.review?.part('Fixtures and contents');
+    dressBuilding(A, rng, info);
+  }
+  A.review?.scope('alley-lines', 'Alley lines', 'src/world/dressing.js#alleyLines');
   alleyLines(A, rng, infos);
   A.jitter = null;
 }

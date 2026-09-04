@@ -1,0 +1,17 @@
+[
+  {
+    "reason": "promiseRejection",
+    "error": "AbortError: signal is aborted without reason\n    at onCancel (http://127.0.0.1:4312/node_modules/.vite/deps/@alterno-dev_spatial-review.js?v=a3540cb1:2306:25)\n    at onMessage (http://127.0.0.1:4312/node_modules/.vite/deps/@alterno-dev_spatial-review.js?v=a3540cb1:2398:7)",
+    "frames": [
+      {
+        "name": "produceRepresentation",
+        "url": "",
+        "location": {
+          "scriptId": "338",
+          "lineNumber": 97,
+          "columnNumber": 10
+        }
+      }
+    ]
+  }
+]

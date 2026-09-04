@@ -1,0 +1,12 @@
+{
+  "valid": true,
+  "instances": 1,
+  "triangles": 20,
+  "source": "src/world/layout.js#E2; src/world/props.js#rock_b",
+  "materials": [
+    {
+      "id": "E2-context-design-material-meshstandardmaterial-1"
+    }
+  ],
+  "finiteMatrices": true
+}
