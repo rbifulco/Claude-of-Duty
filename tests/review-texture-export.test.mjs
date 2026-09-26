@@ -66,9 +66,10 @@ test('failed export stays retryable and unsupported dimensions fail before alloc
 
 test('only explicit review captures export, and the bridge attaches before awaiting exports', async () => {
   const main = await readFile(new URL('../src/main.js', import.meta.url), 'utf8');
-  assert.match(main, /const texturePreparation = spatialCapture \? prepareReviewTextureSources/);
+  assert.match(main, /if \(spatialCapture\) \{\s+const materials = engine\.ctx\.get\('materials'\);\s+texturePreparation = prepareReviewTextureSources/);
   assert.match(main, /attachClaudeOfDutyScene\(engine, \{ texturePreparation \}\)/);
-  assert.ok(main.indexOf('const spatialReview = attachClaudeOfDutyScene') < main.indexOf('const exported = await texturePreparation'));
+  assert.ok(main.indexOf('spatialReview = attachClaudeOfDutyScene') < main.indexOf('const exported = await texturePreparation'));
+  assert.ok(main.indexOf('spatialReview = attachClaudeOfDutyScene') < main.indexOf('if (!spatialCapture) engine.start()'));
 });
 
 test('cooperative capture work yields to a real task without relying on timers', async () => {

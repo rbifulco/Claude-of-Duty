@@ -32,6 +32,7 @@ const spatialCapture = params.get('spatial-review-capture') === '1';
 // free-run. See the long comment in src/dev/shots.js.
 const lockstep = capture && params.get('lockstep') === '1';
 const detachSpatialReviewDiscovery = attachClaudeOfDutyDiscovery();
+if (import.meta.hot) import.meta.hot.dispose(detachSpatialReviewDiscovery);
 
 // The editor discovers integrations through a hidden iframe. That frame only
 // needs the lightweight discovery bridge: booting the full procedural game can
@@ -100,18 +101,24 @@ if (shouldBootClaudeOfDutyPage({ embedded: window.parent !== window, spatialCapt
   console.info('[boot] prewarm', warmup);
   window.__PREWARM__ = warmup;
 
-  // Register after boot and pre-warm so a review catalog request cannot race the
-  // level builder or shader compiler. Serialization remains lazy until an editor
-  // explicitly asks for the scene.
+  // Only the explicit frozen capture owns a scene catalog. The ordinary game
+  // already exposes discovery and does not construct review metadata or serve
+  // a partial catalog made from its live actors.
   const textureAbort = new AbortController();
-  const materials = engine.ctx.get('materials');
-  const texturePreparation = spatialCapture ? prepareReviewTextureSources(
-    engine.ctx.get('render').renderer, materials._forge?._owned ?? [], materials._materials.values(),
-    undefined, { signal: textureAbort.signal },
-  ) : undefined;
-  const spatialReview = attachClaudeOfDutyScene(engine, { texturePreparation });
-  window.__SPATIAL_REVIEW__ = spatialReview;
-  const stopCapture = () => { textureAbort.abort(); spatialReview.dispose(); };
+  let texturePreparation;
+  let spatialReview;
+  if (spatialCapture) {
+    const materials = engine.ctx.get('materials');
+    texturePreparation = prepareReviewTextureSources(
+      engine.ctx.get('render').renderer, materials._forge?._owned ?? [], materials._materials.values(),
+      undefined, { signal: textureAbort.signal },
+    );
+    // Registration follows the level builder and precedes texture export, so
+    // catalog delivery cannot race boot or wait behind generated PNGs.
+    spatialReview = attachClaudeOfDutyScene(engine, { texturePreparation });
+    window.__SPATIAL_REVIEW__ = spatialReview;
+  }
+  const stopCapture = () => { textureAbort.abort(); spatialReview?.dispose(); };
   if (spatialCapture) addEventListener('pagehide', stopCapture, { once: true });
 
   // Publish the catalog before awaiting texture work. The resource gate above
@@ -173,7 +180,6 @@ if (shouldBootClaudeOfDutyPage({ embedded: window.parent !== window, spatialCapt
     import.meta.hot.dispose(() => {
       removeEventListener('pagehide', stopCapture);
       stopCapture();
-      detachSpatialReviewDiscovery();
       delete window.__SPATIAL_REVIEW__;
       engine.dispose();
     });

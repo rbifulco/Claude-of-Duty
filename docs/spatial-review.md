@@ -5,7 +5,8 @@ This is a refinement of the existing integration using the current
 The existing official-editor authorization is retained. No production origins,
 registered data categories, or framing permissions have been added.
 
-The 2026-09-03 SDK/protocol update pins 0.7.0. Both bridges explicitly set
+The installed SDK and protocol both pin the current published 0.7.0 release.
+Both bridges explicitly set
 `allowLoopbackPeers: true` to preserve the approved cross-port local workflow.
 Origin-policy advertisement remains disabled. Denied live handshakes receive
 a typed rejection without scene data; asset/resource requests remain protected.
@@ -20,9 +21,9 @@ a typed rejection without scene data; asset/resource requests remain protected.
 | Navigation | Keep the five-view review tour sourced from `SHOTS` in `src/dev/shots.js`. Linear transitions are a review-only approximation, not a gameplay route. |
 | Capture | Use the existing RNG with fixed seed `0x5eed1234`, six boot-pose enemies, one hero-view render, and no running simulation or frame-stat polling. Hide the unposed first-person rig in this snapshot only. Ordinary gameplay remains unchanged. |
 | Performance | Publish project-relative discovery, keep the frozen one-frame capture, and bound geometry to one 64 MiB request with a 32-request queue. With `asset-stream-v1`, publish all prop transforms/bounds immediately and construct the 3,206 review-only placement mirrors only when their shared asset is requested. |
-| Lifecycle | Discovery starts on the ordinary entry page; an unflagged editor iframe serves only that lightweight bridge so cold game boot cannot starve the handshake. The scene bridge starts after construction in top-level play or the explicitly flagged live-capture iframe. Both detach on HMR. Refresh rebuilds the snapshot; SDK 0.6.0 adds deferred representations, status, cancellation, typed instances, and bounded streaming. Non-streaming peers receive the eager structure/context catalog; deferred-only prop placements require `asset-stream-v1`. |
+| Lifecycle | Discovery starts on the ordinary entry page; an unflagged editor iframe serves only that bridge so cold game boot cannot starve the handshake. Only the explicitly flagged frozen capture constructs the scene registry and starts the capture bridge. Both bridges detach on HMR. Refresh rebuilds the snapshot; the current SDK supports deferred representations, status, cancellation, typed instances, and bounded streaming. Non-streaming peers receive the eager structure/context catalog; deferred-only prop placements require `asset-stream-v1`. |
 
-The installed 0.6.0 SDK supports cached transforms/bounds, ref-counted runtime
+The installed 0.7.0 SDK supports cached transforms/bounds, ref-counted runtime
 resources, negotiated progressive/transferable geometry, deferred asset
 representations, bounded streaming, and transform-only
 assemblies. Hierarchy-aware editors receive the v7 ownership graph; consumers
@@ -39,7 +40,7 @@ limits are intentionally conservative because the editor can keep multiple
 source frames alive: one active 64 MiB family, a 64 MiB aggregate reservation,
 and 32 queued requests per frame.
 
-With SDK 0.6.0, `registerDeferred` lets repeated prop placements
+With SDK 0.7.0, `registerDeferred` lets repeated prop placements
 register accurate world transforms and geometry-derived bounds without retaining
 one `THREE.Mesh` mirror per actor. The canonical prop factory is materialized only
 for a requested overview/detail family, reports bounded progress, and honors
@@ -159,6 +160,30 @@ time-of-day changes must be checked in the game. The normal page remains playabl
 the advertised capture page is an intentionally frozen boot-state snapshot.
 
 ## Verification
+
+### Current SDK/editor check (2026-09-26)
+
+The installed SDK and protocol are the published 0.7.0 release. The
+deterministic full-world test export contains 3,232 actors, 45 transform-only
+assemblies, 84 asset families, and one navigation sequence with five stops,
+four segments, and 16 camera/aim points. The live browser capture exported
+3,216 actors and 87 asset families, including six enemies. Both are below the
+editor's current catalog limits of 5,000 actors, 2,000 asset families, 200
+sequences, 5,000 stops/segments, and 50,000 points. The test export still has
+independent placements for 706 attached fixtures and 3,206 shared-prototype
+props. Among review bridges, the ordinary page now starts only discovery;
+the full catalog bridge is limited to the explicit capture, avoiding a partial
+live-game catalog and its needless registration work. An unflagged embedded
+discovery frame also detaches its listener on HMR.
+
+In a local production Pages-base browser check, the editor resolved the
+project-relative manifest, accepted the live catalog, and rendered its scene
+tree with `World 3216`, Building BE1 structure, and independent AC children.
+The capture exported 81 shared generated textures and reported no page errors.
+At the bounded 120-second check, the editor was still preparing geometry and
+tree previews for 87 asset families. This run did not establish complete
+preview readiness or verify switching to Asset and Experience views. The
+earlier full-view check below predates this lifecycle refinement.
 
 ### Hidden cross-site capture startup (2026-09-04)
 
