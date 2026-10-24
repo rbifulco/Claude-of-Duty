@@ -7,10 +7,11 @@ import {
 import * as THREE from 'three';
 import { SHOTS } from './dev/shots.js';
 import { gateReviewTextureResources } from './review-texture-export.js';
+import { createReviewMaterialResolver } from './review-materials.js';
 
 // Change when the review catalog's stable actor/asset addressing changes. The
 // editor uses this to avoid replacing a saved scene with an identical handoff.
-const BUILD_ID = `claude-of-duty-ownership-v7-${import.meta.env?.VITE_GIT_COMMIT || 'development'}`;
+const BUILD_ID = `claude-of-duty-ownership-v7-material-colours-v1-${import.meta.env?.VITE_GIT_COMMIT || 'development'}`;
 export const SPATIAL_REVIEW_SEED = 0x5eed1234;
 // SDK 0.7 requires an explicit opt-in for the existing cross-port local workflow.
 const AUTHORIZATION_OPTIONS = { allowOfficialEditor: true, allowLoopbackPeers: true };
@@ -90,7 +91,7 @@ function overviewGeometry(source, ThreeRuntime) {
   return geometry;
 }
 
-function createPropMirror(prop, placement, world, ThreeRuntime = THREE, purpose = 'detail') {
+function createPropMirror(prop, placement, world, ThreeRuntime = THREE, purpose = 'detail', reviewMaterials) {
   const geometry = purpose === 'overview' ? overviewGeometry(prop.geometry, ThreeRuntime) : prop.geometry;
   const root = new ThreeRuntime.Mesh(geometry, prop.material);
   // Component identity belongs to the design, not whichever placement is
@@ -101,15 +102,15 @@ function createPropMirror(prop, placement, world, ThreeRuntime = THREE, purpose 
   root.userData.surface = world.A.surfaceOf(prop.key);
   root.userData.reviewOnly = true;
   root.updateMatrixWorld(true);
-  return root;
+  return reviewMaterials ? reviewMaterials.apply(root) : root;
 }
 
-function registerDeferredProp(registry, prop, placement, registration, world, ThreeRuntime) {
+function registerDeferredProp(registry, prop, placement, registration, world, ThreeRuntime, reviewMaterials) {
   if (typeof registry.registerDeferred !== 'function') return false;
   const indexCount = prop.geometry.index?.count ?? prop.geometry.getAttribute('position')?.count ?? 0;
   const triangles = Math.floor(indexCount / 3);
   const overviewBytes = geometryBytes(prop.geometry, ['position']);
-  const detailAttributes = ['position', 'normal', 'uv']
+  const detailAttributes = ['position', 'normal', 'uv', 'color']
     .filter(name => Boolean(prop.geometry.getAttribute(name)));
   const detailBytes = geometryBytes(prop.geometry, detailAttributes);
   const revision = `${BUILD_ID}-${registration.assetId}`;
@@ -144,7 +145,7 @@ function registerDeferredProp(registry, prop, placement, registration, world, Th
     produceRepresentation({ representation, signal, reportProgress }) {
       if (signal.aborted) throw new DOMException('Prop request cancelled.', 'AbortError');
       reportProgress({ phase: 'generating', completed: 0, total: 1 });
-      const root = createPropMirror(prop, placement, world, ThreeRuntime, representation.purpose);
+      const root = createPropMirror(prop, placement, world, ThreeRuntime, representation.purpose, reviewMaterials);
       if (signal.aborted) throw new DOMException('Prop request cancelled.', 'AbortError');
       reportProgress({ phase: 'generating', completed: 1, total: 1 });
       return root;
@@ -153,7 +154,7 @@ function registerDeferredProp(registry, prop, placement, registration, world, Th
   return true;
 }
 
-function registerWorldComposition(registry, world, mirrors, ThreeRuntime = THREE) {
+function registerWorldComposition(registry, world, mirrors, ThreeRuntime = THREE, reviewMaterials) {
   const hierarchical = typeof registry.registerAssembly === 'function';
   const staticObjects = [...(hierarchical ? world.A?.reviewStructures ?? [] : world.A?.reviewStatics ?? [])]
     .sort((left, right) => left.id.localeCompare(right.id));
@@ -175,6 +176,7 @@ function registerWorldComposition(registry, world, mirrors, ThreeRuntime = THREE
   });
 
   staticObjects.forEach((object, index) => {
+      object.roots.forEach(root => reviewMaterials.apply(root));
       mirrors.push(...object.roots);
       registry.register({
         actorId: object.id,
@@ -210,10 +212,10 @@ function registerWorldComposition(registry, world, mirrors, ThreeRuntime = THREE
         order: 1000 + assetIndex * 10000 + propPlacements,
         parentAssemblyId: placement.ownerId ?? undefined,
       };
-      if (registerDeferredProp(registry, prop, placement, registration, world, ThreeRuntime)) {
+      if (registerDeferredProp(registry, prop, placement, registration, world, ThreeRuntime, reviewMaterials)) {
         deferredPropPlacements++;
       } else {
-        const root = createPropMirror(prop, placement, world, ThreeRuntime);
+        const root = createPropMirror(prop, placement, world, ThreeRuntime, 'detail', reviewMaterials);
         mirrors.push(root);
         registry.register({ ...registration, root });
       }
@@ -368,8 +370,9 @@ export function attachClaudeOfDutyScene(engine, dependencies = {}) {
   const ThreeRuntime = dependencies.THREE ?? THREE;
   const registry = new Registry(BUILD_ID);
   const mirrors = [];
+  const reviewMaterials = createReviewMaterialResolver();
 
-  const composition = registerWorldComposition(registry, world, mirrors, ThreeRuntime);
+  const composition = registerWorldComposition(registry, world, mirrors, ThreeRuntime, reviewMaterials);
   const enemies = registerAiComposition(registry, ai);
   registry.registerNavigationSequence(buildEnvironmentReviewTour());
   registry.setSourceStatus?.({
@@ -398,6 +401,7 @@ export function attachClaudeOfDutyScene(engine, dependencies = {}) {
     dispose() {
       detachBridge();
       disposeTextureGate?.();
+      reviewMaterials.dispose();
       mirrors.length = 0;
     },
   };

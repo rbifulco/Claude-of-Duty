@@ -15,7 +15,7 @@ a typed rejection without scene data; asset/resource requests remain protected.
 
 | Area | Decision / authoritative source |
 | --- | --- |
-| Dependencies | Pin the published npm SDK/protocol 0.7.0 release, sharing the game's Three.js 0.180.0. Cross-repository validation can still inject a sibling SDK build explicitly for pre-release changes. |
+| Dependencies | Pin the published npm SDK/protocol 0.9.0 release, sharing the game's Three.js 0.180.0. Cross-repository validation can still inject a sibling SDK build explicitly for pre-release changes. |
 | Actors | Transform-only owners for buildings, palms, lamps, sandbag walls, and the gate. Register structure and attached fixtures as independent child placements. Keep loose placements at World; retain broad context zones. |
 | Assets | Preserve placement-specific procedural structure assets. Every repeated prop, attached or loose, references its canonical `prop-*` prototype asset. |
 | Navigation | Keep the five-view review tour sourced from `SHOTS` in `src/dev/shots.js`. Linear transitions are a review-only approximation, not a gameplay route. |
@@ -334,3 +334,15 @@ source. The Scene UI initially resolved 3,173/3,216 asset meshes; complete
 geometry coverage was not audited. These checks establish installation and
 representative handoffs, not exhaustive full-loop or visual-fidelity acceptance.
 Test observations remain isolated in the temporary editor origin's local state.
+
+### Standard material colour semantics
+
+The OW weathering shader uses vertex RGB as wear, grime, and occlusion masks
+and replaces Three.js's ordinary vertex-colour multiplication. Review-only
+material clones therefore disable `vertexColors` for materials marked with
+`OW_VCOL_MASKS`, while retaining the geometry attributes, base maps, and source
+textures. True vertex-coloured materials keep their original setting. This
+avoids displaying weathering masks as green/red/blue paint when a consumer
+supports vertex colours. Clones are shared for each source material and disposed
+with the capture; source materials and texture ownership are unchanged.
+Custom weathering, world-space projection and final lighting remain approximate.
